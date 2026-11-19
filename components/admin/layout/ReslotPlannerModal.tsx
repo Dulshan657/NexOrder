@@ -122,13 +122,13 @@ export function ReslotPlannerModal({ warehouse, layoutId, publishing, onCancel, 
               <p className="font-semibold">
                 {feasible
                   ? moves.length === 0
-                    ? 'No relocation needed — all stock stays in bins the new layout keeps.'
+                    ? 'No relocation needed — all stock stays in locations the new layout keeps.'
                     : `Plan fits: ${moves.length} move${moves.length === 1 ? '' : 's'} into the new layout.`
-                  : "Not enough capacity — some stock can't be placed. Add more bins/capacity, then re-open."}
+                  : "Not enough capacity — some stock can't be placed. Add more locations/capacity, then re-open."}
               </p>
               <p className="mt-0.5">
                 Needs {data.capacity.requiredSlots.toFixed(0)} slots · {data.capacity.providedFreeSlots.toFixed(0)} free
-                {data.capacity.hasUncapped ? ' (+ uncapped bins)' : ''}
+                {data.capacity.hasUncapped ? ' (+ uncapped locations)' : ''}
               </p>
             </div>
           </div>
@@ -184,7 +184,7 @@ export function ReslotPlannerModal({ warehouse, layoutId, publishing, onCancel, 
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
               <p className="font-semibold">Couldn't place all stock:</p>
               {data.overflow.map((o) => (
-                <p key={o.productId}>• {o.productName} — {o.qty} unit(s) with no bin. Add capacity and re-open.</p>
+                <p key={o.productId}>• {o.productName} — {o.qty} unit(s) with no location. Add capacity and re-open.</p>
               ))}
             </div>
           )}

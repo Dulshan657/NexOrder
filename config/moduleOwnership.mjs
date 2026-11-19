@@ -155,6 +155,7 @@ export const FUNCTION_MODULES = {
   'publish-layout': 'inventory_dispatch',
   'receive-stock': 'inventory_dispatch',
   'recommend-pick-route': 'inventory_dispatch',
+  'explain-product-location': 'inventory_dispatch',
   'recommend-putaway': 'inventory_dispatch',
   'recommend-putaway-route': 'inventory_dispatch',
   'recommend-replen-route': 'inventory_dispatch',

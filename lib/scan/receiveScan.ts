@@ -94,7 +94,7 @@ export function resolveReceiveScan(
 export function describeReceiveRefusal(target: ReceiveScanTarget): string | null {
   switch (target.kind) {
     case 'bin':
-      return `${target.code} is a bin. Receipts land at the site — Putaway moves the stock to a bin afterwards.`
+      return `${target.code} is a location. Receipts land at the site — Putaway moves the stock to a location afterwards.`
     case 'handlingUnit':
       return `${target.code} is a pallet label. Receiving creates the pallet; it is not scanned in.`
     case 'unknown':

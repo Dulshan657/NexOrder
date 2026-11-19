@@ -313,7 +313,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
       const failedRows = entries.length - receivedLines;
       setImportOutcome({ received: receivedLines, placed: placedLines, failed: failedRows, total: entries.length });
       if (receivedLines > 0) {
-        const placedNote = placedLines > 0 ? `, ${placedLines} placed into bins` : '';
+        const placedNote = placedLines > 0 ? `, ${placedLines} placed into locations` : '';
         addToast?.(`Received ${receivedLines} line${receivedLines === 1 ? '' : 's'} into stock${placedNote}`, 'success');
       }
     } catch (err) {
@@ -363,7 +363,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-stone-500">
             Upload a CSV of opening balances (quantities are <strong>base units</strong>, not cartons). Fill{' '}
-            <strong>bin_code</strong> to land a counted stocktake straight into its bin; leave it blank and the stock
+            <strong>bin_code</strong> to land a counted stocktake straight into its location; leave it blank and the stock
             arrives at the warehouse root for the Putaway queue. Receiving is additive, so re-running the same file
             twice will double the stock.
           </p>
@@ -403,7 +403,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
               <p className="mt-1.5 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
                 <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
                 <span>
-                  {unconfirmedLabelCount} bin{unconfirmedLabelCount === 1 ? '' : 's'} here still show as
+                  {unconfirmedLabelCount} location{unconfirmedLabelCount === 1 ? '' : 's'} here still show as
                   unlabelled. Counting by <strong>bin_code</strong> before the barcode labels are on the racking
                   produces a count nobody can transcribe — confirm the label run first (Settings → Warehouse
                   → Print labels).
@@ -462,7 +462,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
                     <th className="px-2 py-2">Qty (base units)</th>
                     <th className="px-2 py-2">Current on-hand</th>
                     <th className="px-2 py-2">Carton size</th>
-                    <th className="px-2 py-2">Bin</th>
+                    <th className="px-2 py-2">Location</th>
                     <th className="px-2 py-2">Lot code</th>
                     <th className="px-2 py-2">Expiry</th>
                     <th className="px-2 py-2">Barcode</th>
@@ -503,7 +503,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
           <ImportResultStatGrid
             items={[
               { label: 'Received', value: importOutcome.received, tone: 'success' },
-              { label: 'Placed in bins', value: importOutcome.placed, tone: importOutcome.placed > 0 ? 'success' : 'default' },
+              { label: 'Placed in locations', value: importOutcome.placed, tone: importOutcome.placed > 0 ? 'success' : 'default' },
               { label: 'Failed', value: importOutcome.failed, tone: importOutcome.failed > 0 ? 'error' : 'default' },
               { label: 'Total', value: importOutcome.total },
             ]}

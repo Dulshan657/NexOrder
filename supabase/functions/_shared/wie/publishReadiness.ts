@@ -73,14 +73,14 @@ export interface ReadinessResult {
 const LABELS: Record<ReadinessCode, string> = {
   no_dock: 'Loading dock',
   no_walkways: 'Walkways',
-  no_bins: 'Storage bins',
-  unreachable_bins: 'All bins reachable',
+  no_bins: 'Storage locations',
+  unreachable_bins: 'All locations reachable',
 }
 
 const MESSAGES: Record<ReadinessCode, string> = {
   no_dock: 'Add at least one dock — putaway routes start from a dock.',
   no_walkways: 'Draw walkways connecting docks to your storage.',
-  no_bins: 'Place at least one storage bin before publishing.',
+  no_bins: 'Place at least one storage location before publishing.',
   unreachable_bins: 'have no walkway route from a dock. Connect them and republish.',
 }
 
@@ -182,7 +182,7 @@ export function evaluatePublishReadiness(input: ReadinessInput): ReadinessResult
       code: 'unreachable_bins',
       label: LABELS.unreachable_bins,
       status: reachableStatus,
-      message: `${unreachableIds.length} bin(s) ${MESSAGES.unreachable_bins}`,
+      message: `${unreachableIds.length} location(s) ${MESSAGES.unreachable_bins}`,
     },
   ]
 

@@ -9,7 +9,7 @@ const DAY = new Date(2026, 6, 27, 14, 30)
 describe('labelSheetFileName', () => {
   it('names a layout sheet by warehouse, stock and day', () => {
     expect(labelSheetFileName({ group: 'slots', layoutName: 'MAIN', date: DAY })).toBe(
-      'main-bin-level-stickers-2026-07-27.pdf',
+      'main-location-level-stickers-2026-07-27.pdf',
     )
     expect(labelSheetFileName({ group: 'wayfinding', layoutName: 'MAIN', date: DAY })).toBe(
       'main-zone-aisle-signs-2026-07-27.pdf',
@@ -44,7 +44,7 @@ describe('labelSheetFileName', () => {
 
   it('slugs punctuation and spacing out of a layout name', () => {
     expect(labelSheetFileName({ group: 'slots', layoutName: 'Main DC / Bldg 2', date: DAY })).toBe(
-      'main-dc-bldg-2-bin-level-stickers-2026-07-27.pdf',
+      'main-dc-bldg-2-location-level-stickers-2026-07-27.pdf',
     )
   })
 

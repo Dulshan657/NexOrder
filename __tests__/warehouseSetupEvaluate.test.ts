@@ -121,7 +121,7 @@ describe('evaluateSetup — derived predicates', () => {
       'labels_confirmed',
     )
     expect(partial.status).not.toBe('done')
-    expect(partial.evidence).toBe('3 of 189 bins unconfirmed')
+    expect(partial.evidence).toBe('3 of 189 locations unconfirmed')
   })
 
   it('distinguishes stock received-but-unplaced from no stock at all', () => {
@@ -130,7 +130,7 @@ describe('evaluateSetup — derived predicates', () => {
       'opening_stock',
     )
     expect(unplaced.status).not.toBe('done')
-    expect(unplaced.evidence).toBe('received, none placed in bins')
+    expect(unplaced.evidence).toBe('received, none placed in locations')
 
     const none = byKey(
       evaluateSetup(liveRacked({ hasBinLevelStock: false, hasAnyStock: false })),

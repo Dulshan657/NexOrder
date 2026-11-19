@@ -160,7 +160,7 @@ async function ensurePublishedLayoutWithOneRack(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Add warehouse' }).click()
     await page.getByLabel('Code', { exact: true }).fill(FIXTURE_WAREHOUSE_CODE)
     await page.getByLabel('Name', { exact: true }).fill(FIXTURE_WAREHOUSE_NAME)
-    await page.getByRole('button', { name: 'Racked (bins/WMS)' }).click()
+    await page.getByRole('button', { name: 'Racked (locations/WMS)' }).click()
     await page.getByRole('button', { name: 'Create warehouse' }).click()
     await expect(page.getByText(FIXTURE_WAREHOUSE_NAME, { exact: true })).toBeVisible({ timeout: 10_000 })
   }

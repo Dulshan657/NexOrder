@@ -130,7 +130,7 @@ const WarehouseForm: React.FC<WarehouseFormProps> = ({ warehouse, onClose }) => 
           helper={
             form.locationType === 'bulk'
               ? 'Stock held in unorganised piles, depleted FIFO.'
-              : 'Stock tracked in named bins, slotted by the optimiser.'
+              : 'Stock tracked in named locations, slotted by the optimiser.'
           }
         >
           <div className="grid grid-cols-2 gap-2">
@@ -146,7 +146,7 @@ const WarehouseForm: React.FC<WarehouseFormProps> = ({ warehouse, onClose }) => 
                     : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
                 }`}
               >
-                {type === 'bulk' ? 'Bulk (piles, FIFO)' : 'Racked (bins/WMS)'}
+                {type === 'bulk' ? 'Bulk (piles, FIFO)' : 'Racked (locations/WMS)'}
               </button>
             ))}
           </div>

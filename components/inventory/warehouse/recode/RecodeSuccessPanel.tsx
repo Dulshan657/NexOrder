@@ -50,7 +50,7 @@ export function RecodeSuccessPanel({
           {recoded}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-stone-500">
-          bin{recoded === 1 ? '' : 's'} recoded as{' '}
+          location{recoded === 1 ? '' : 's'} recoded as{' '}
           <span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-stone-700">
             {block}
           </span>

@@ -248,7 +248,7 @@ test.describe.serial('Putaway goes straight onto the walk', () => {
       })
 
       await test.step('after the refresh the stop is a plain stop and completes normally', async () => {
-        const plainLabel = `Scan the bin — expecting ${o1.code}`
+        const plainLabel = `Scan the location — expecting ${o1.code}`
         await expect(binScanField(walker, plainLabel)).toBeVisible()
         await expect(walker.getByText(/Home full/)).toHaveCount(0)
         await scanBinAs(walker, plainLabel, o1.code)
@@ -328,7 +328,7 @@ test.describe.serial('Putaway goes straight onto the walk', () => {
         await expect(walker.getByText(COPY.offer)).toHaveCount(0)
         await identifyProduct(walker, product)
         // On the bin step, where the offer would be: still nothing to give a home.
-        await expect(walker.getByLabel(/^Scan the bin/)).toBeVisible()
+        await expect(walker.getByLabel(/^Scan the location/)).toBeVisible()
         await expect(identifyField(walker)).toHaveCount(0)
         await expect(walker.getByText(COPY.offer)).toHaveCount(0)
         await expect(walker.getByRole('button', { name: 'Give it a home' })).toHaveCount(0)

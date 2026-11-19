@@ -305,8 +305,8 @@ export function LayoutLabelJobModal({
         // expect, and concludes the area filter is broken.
         contextNote
           ?? (layoutName
-            ? `Every label ${layoutName} needs — bins, rack levels, aisle signs and staging.`
-            : 'Every label this layout needs — bins, rack levels, aisle signs and staging.')
+            ? `Every label ${layoutName} needs — locations, rack levels, aisle signs and staging.`
+            : 'Every label this layout needs — locations, rack levels, aisle signs and staging.')
       }
       // An unconfirmed job is not unsaved work: the PDFs are stored and listed in
       // Recent runs, and the backlog is deliberately unchanged until confirm. So

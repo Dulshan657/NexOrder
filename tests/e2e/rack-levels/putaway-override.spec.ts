@@ -80,22 +80,22 @@ test.describe('Rack levels — putaway override', () => {
       await selectPutawayWarehouse(page, FIXTURE_WAREHOUSE_CODE)
 
       const row = page.locator('div.px-4.py-3', {
-        has: page.getByRole('button', { name: `Why this bin for ${PRODUCT_NAME}?` }),
+        has: page.getByRole('button', { name: `Why this location for ${PRODUCT_NAME}?` }),
       })
       await expect(row).toBeVisible({ timeout: 10_000 })
 
       // BUG: should show the engine's hard-filter label (LEVEL_ROLE_MISMATCH)
       // and amber styling; actually falls back to the generic wedge copy
       // because of the casing bug documented above.
-      await expect.soft(row.getByText('No eligible bin')).toHaveCount(0)
-      await expect.soft(row.getByRole('button', { name: 'Choose bin' })).toHaveClass(/text-amber-700/)
+      await expect.soft(row.getByText('No eligible location')).toHaveCount(0)
+      await expect.soft(row.getByRole('button', { name: 'Choose location' })).toHaveClass(/text-amber-700/)
 
-      await row.getByRole('button', { name: 'Choose bin' }).click()
-      await expect(page.getByText('Choose a bin')).toBeVisible()
+      await row.getByRole('button', { name: 'Choose location' }).click()
+      await expect(page.getByText('Choose a location')).toBeVisible()
 
       // BUG: the wedge banner (isWedged && hardFilters includes the
       // mismatch) never renders for the same casing reason.
-      await expect.soft(page.getByText(/pick a bin below and confirm with/i)).toBeVisible()
+      await expect.soft(page.getByText(/pick a location below and confirm with/i)).toBeVisible()
 
       // The override mechanism itself does NOT depend on the broken code
       // string (putawayGuards.isLevelRoleMismatch compares levelRole/

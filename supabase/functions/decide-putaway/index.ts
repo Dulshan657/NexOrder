@@ -179,11 +179,11 @@ async function handleDeskAction(
   if (args.decision === 'redirect') {
     const to = args.chosenLocationId!
     const { data: bin } = await admin.from('locations').select('id, is_active, code').eq('id', to).maybeSingle()
-    if (!bin) throw new EdgeFunctionError('NOT_FOUND', `Bin ${to} not found`)
-    if (!bin.is_active) throw new EdgeFunctionError('CONFLICT', 'That bin is no longer active — choose another')
+    if (!bin) throw new EdgeFunctionError('NOT_FOUND', `Location ${to} not found`)
+    if (!bin.is_active) throw new EdgeFunctionError('CONFLICT', 'That location is no longer active — choose another')
     const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: to })
     if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
-    if (root !== rec.warehouse_id) throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not inside this warehouse')
+    if (root !== rec.warehouse_id) throw new EdgeFunctionError('INVALID_INPUT', 'That location is not inside this warehouse')
 
     // The home rule first (NX-0032): a redirect is the desk choosing where the
     // floor will be sent, so it is refused the same way the walk would be.
@@ -198,8 +198,8 @@ async function handleDeskAction(
       ])
       if (fromHold !== toHold) {
         throw new EdgeFunctionError('CONFLICT', fromHold
-          ? 'This line is on hold; it can only go to another hold bin'
-          : `${bin.code} is a hold bin; only quarantined stock goes there`)
+          ? 'This line is on hold; it can only go to another hold location'
+          : `${bin.code} is a hold location; only quarantined stock goes there`)
       }
     }
     const { data: binRole } = await admin.from('locations').select('level_role').eq('id', to).maybeSingle()
@@ -314,17 +314,17 @@ serve(async (req: Request) => {
         const { data: byCode, error: codeErr } = await admin.from('locations')
           .select('id').ilike('code', scannedCode).maybeSingle()
         if (codeErr) {
-          console.error('[decide-putaway] scanned bin lookup failed', codeErr)
-          throw new EdgeFunctionError('INTERNAL', 'Could not confirm the bin, try again.')
+          console.error('[decide-putaway] scanned location lookup failed', codeErr)
+          throw new EdgeFunctionError('INTERNAL', 'Could not confirm the location, try again.')
         }
         if (!byCode) throw new EdgeFunctionError('NOT_FOUND', `No location has the code ${scannedCode}`)
         if (scannedId != null && scannedId !== (byCode as any).id) {
           throw new EdgeFunctionError(
-            'INVALID_INPUT', 'The scanned bin and the selected bin disagree — rescan the bin label')
+            'INVALID_INPUT', 'The scanned location and the selected location disagree — rescan the location label')
         }
         scannedId = (byCode as any).id as number
       }
-      if (scannedId == null) throw new EdgeFunctionError('INVALID_INPUT', 'No bin given')
+      if (scannedId == null) throw new EdgeFunctionError('INVALID_INPUT', 'No location given')
       const { data: confirmed, error: cErr } = await admin.rpc('wie_confirm_overflow_tx', {
         p_rec_id: recommendation_id,
         p_location: scannedId,
@@ -378,7 +378,7 @@ serve(async (req: Request) => {
 
     const chosen = decision === 'accept' ? ((rec as any).recommended_location_id as number | null) : chosen_location_id!
     if (chosen == null) {
-      throw new EdgeFunctionError('INVALID_INPUT', 'No recommended bin to accept — choose a bin instead')
+      throw new EdgeFunctionError('INVALID_INPUT', 'No recommended location to accept — choose a location instead')
     }
 
     // Fail fast with a legible message; wie_decide_putaway_tx re-checks this
@@ -394,14 +394,14 @@ serve(async (req: Request) => {
     // The chosen bin must be active and belong to this warehouse.
     const { data: binRow, error: binErr } = await admin.from('locations')
       .select('id, is_active, code, level_role').eq('id', chosen).single()
-    if (binErr || !binRow) throw new EdgeFunctionError('NOT_FOUND', `Bin ${chosen} not found`)
+    if (binErr || !binRow) throw new EdgeFunctionError('NOT_FOUND', `Location ${chosen} not found`)
     if (!(binRow as any).is_active) {
-      throw new EdgeFunctionError('CONFLICT', 'That bin is no longer active — re-run the recommendation')
+      throw new EdgeFunctionError('CONFLICT', 'That location is no longer active — re-run the recommendation')
     }
     const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: chosen })
     if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
     if (root !== warehouseId) {
-      throw new EdgeFunctionError('INVALID_INPUT', 'Chosen bin is not inside this warehouse')
+      throw new EdgeFunctionError('INVALID_INPUT', 'Chosen location is not inside this warehouse')
     }
 
     // The home rule (NX-0032), for accept, override and assign_only alike: `chosen`
@@ -437,7 +437,7 @@ serve(async (req: Request) => {
           throw new EdgeFunctionError(
             'CONFLICT',
             `${(binRow as any).code} is a ${chosenLevelRole} level; ${productSku ?? `product ${productId}`} is only ` +
-              `allowed on ${allowedRolesForSku!.join('/')} levels. Choose a different bin, or confirm "Place anyway" to override.`,
+              `allowed on ${allowedRolesForSku!.join('/')} levels. Choose a different location, or confirm "Place anyway" to override.`,
           )
         }
         roleOverrideApplied = true

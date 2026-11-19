@@ -15,7 +15,7 @@ import type { LabelKind } from '@/services/supabase/labelService'
  */
 export const GROUP_LABEL: Record<SheetGroup, string> = {
   wayfinding: 'Zone & aisle signs',
-  slots: 'Bin & level stickers',
+  slots: 'Location & level stickers',
   staging: 'Staging & dock',
 }
 

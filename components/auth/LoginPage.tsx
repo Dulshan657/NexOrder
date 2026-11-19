@@ -84,7 +84,7 @@ const DEMO_ACCOUNTS: readonly DemoAccount[] = SHOW_DEMO_LOGINS
 // sized to the tallest, so a much longer line leaves dead space under the others.
 const CAPABILITIES: readonly string[] = [
   'Purchase orders read straight from your inbox',
-  'Pickers routed bin by bin through the racks',
+  'Pickers routed location by location through the racks',
   'Tier pricing, stock and invoicing on one ledger',
 ]
 

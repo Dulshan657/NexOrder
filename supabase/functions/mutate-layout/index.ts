@@ -1079,11 +1079,11 @@ serve(async (req: Request) => {
       } else {
         const { data: parent, error: pErr } = await admin
           .from('locations').select('materialized_path').eq('id', nb.parent_id).single()
-        if (pErr || !parent) throw new EdgeFunctionError('INVALID_INPUT', `Parent ${nb.parent_id} not found for new bin`)
+        if (pErr || !parent) throw new EdgeFunctionError('INVALID_INPUT', `Parent ${nb.parent_id} not found for new location`)
         parentPath = (parent as any).materialized_path as string
       }
       if (whPath && parentPath !== whPath && !parentPath.startsWith(`${whPath}/`)) {
-        throw new EdgeFunctionError('INVALID_INPUT', 'New bins must sit inside this layout\'s warehouse')
+        throw new EdgeFunctionError('INVALID_INPUT', 'New locations must sit inside this layout\'s warehouse')
       }
 
       if (nb.levels && nb.levels.length > 0) {
@@ -1184,7 +1184,7 @@ serve(async (req: Request) => {
         // deterministic code, and a partial earlier save can leave rows behind).
         // Adopt & refresh it instead of dead-ending every retry with a conflict.
         if (cErr?.code !== '23505') {
-          throw new EdgeFunctionError('INTERNAL', cErr?.message ?? 'Failed to create bin')
+          throw new EdgeFunctionError('INTERNAL', cErr?.message ?? 'Failed to create location')
         }
         const adopted = await adoptDraftOrphan(nb.code, {
           parent_id: parentId, kind: nb.kind, name: binName,
@@ -1224,7 +1224,7 @@ serve(async (req: Request) => {
       for (const chunk of chunked(repointIds, 200)) {
         const { data, error } = await admin.from('locations')
           .select('id, materialized_path, storage_type_id').in('id', chunk)
-        if (error) throw new EdgeFunctionError('INTERNAL', `Could not read bins: ${error.message}`)
+        if (error) throw new EdgeFunctionError('INTERNAL', `Could not read locations: ${error.message}`)
         for (const row of (data ?? []) as Array<{ id: number; materialized_path: string; storage_type_id: number | null }>) {
           currentById.set(row.id, { path: row.materialized_path, storageTypeId: row.storage_type_id ?? null })
         }
@@ -1372,7 +1372,7 @@ serve(async (req: Request) => {
     // location_id) violation mid-insert would otherwise leave the draft empty.
     const resolvedIds = input.placements.map((p) => refToLocation.get(p.client_ref)!)
     if (new Set(resolvedIds).size !== resolvedIds.length) {
-      throw new EdgeFunctionError('INVALID_INPUT', 'A bin appears twice in the layout')
+      throw new EdgeFunctionError('INVALID_INPUT', 'A location appears twice in the layout')
     }
     // Same check for the ids that actually become placement rows: a levelled rack
     // contributes its LEVELS, not itself, so a level shared between two racks (or

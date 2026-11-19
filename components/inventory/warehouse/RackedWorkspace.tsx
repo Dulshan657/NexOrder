@@ -62,7 +62,8 @@ import { areaCellsFingerprint } from '@/lib/areaPaint'
 import { signCellsFingerprint } from '@/lib/signPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
-import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
+import type { ProductHighlight } from './FindProductSection'
+import { slottingArrows, routePath, putawayMarkers, holdingMarkers } from './warehouseMarkers'
 import type { OverlayKind } from './warehouseOverlays'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { useToastActions } from '@/hooks/useToasts'
@@ -237,7 +238,20 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
   const [putawayResult, setPutawayResult] = useState<PutawayResponse | null>(null)
   const [routeOrderIds, setRouteOrderIds] = useState<string[]>([])
   const routeQuery = usePickRoute(warehouseId, routeOrderIds)
-  const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS
+  // A product's walk from "Find a product" (NX-0039) is drawn in place of an
+  // order route while one is chosen — same stop shape, same renderers.
+  const [productWalkStops, setProductWalkStops] = useState<PickRouteStop[] | null>(null)
+  // The places holding a product found there, outlined in 2D and lit in 3D.
+  const [productHighlight, setProductHighlight] = useState<ProductHighlight | null>(null)
+  const routeStops = productWalkStops && productWalkStops.length > 0
+    ? productWalkStops
+    : (routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS)
+  // Choosing orders to route takes the product walk off the map, so the orders
+  // chosen are what is drawn.
+  const chooseRouteOrders = useCallback((ids: string[]) => {
+    setRouteOrderIds(ids)
+    setProductWalkStops(null)
+  }, [])
 
   const placements = detail?.placements ?? EMPTY_PLACEMENTS
   const placementByLocation = useMemo(() => {
@@ -778,11 +792,12 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
    */
   const renderMarkers = useCallback((cell: number, scale: number) => (
     <g>
+      {productHighlight && holdingMarkers(cell, scale, productHighlight.locationIds, placementByLocation, floor)}
       {routeStops.length > 0 && routePath(cell, scale, routeStops, placementByLocation, floor)}
       {putawayRec && putawayMarkers(cell, putawayRec, placementByLocation, floor)}
       {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor)}
     </g>
-  ), [routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
+  ), [productHighlight, routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
 
   /**
    * While annotating, the canvas draws the WORKING SET in place of the stored areas
@@ -863,7 +878,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
             }}
             className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
           >
-            Recode bins
+            Recode locations
           </button>
           {/* Assigning stock is its own errand, not a fourth annotate layer: an
               area puts a NAME on the floor, a block decides where goods go.
@@ -967,6 +982,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 products={catalogue}
                 binContents={model.binContents}
                 routeStops={routeStops}
+                focusProductId={productHighlight?.productId ?? null}
               />
             </Suspense>
           </ErrorBoundary>
@@ -1297,7 +1313,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
 
         <FloatingPanel
           id="wh-bin-detail"
-          title="Bin detail"
+          title="Location detail"
           className="max-h-[70svh]"
           containerRef={binDetailRef}
         >
@@ -1341,7 +1357,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           layoutId={layoutId}
           onPutawayResult={setPutawayResult}
           routeOrderIds={routeOrderIds}
-          onRouteOrderIdsChange={setRouteOrderIds}
+          onRouteOrderIdsChange={chooseRouteOrders}
+          onProductWalk={setProductWalkStops}
+          onHighlight={setProductHighlight}
         />
       </div>
     </div>

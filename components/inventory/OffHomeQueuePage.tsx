@@ -96,7 +96,7 @@ function restoreExplanation(task: OffHomeTask, reason: RestoreResult['reason']):
     case 'still_dismissed':
       return `${task.productSku} has been left in ${task.fromCode} again since.`
     case 'no_published_layout':
-      return 'This site has no published layout, so there are no bins to check.'
+      return 'This site has no published layout, so there are no locations to check.'
     default:
       return `${task.productSku} is no longer off-home.`
   }
@@ -150,7 +150,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
         r.reason === 'no_slotting_rules'
           ? 'No slotting rules here yet — nothing can be off-home until a rule says where things belong.'
           : r.reason === 'no_published_layout'
-            ? 'This site has no published layout, so there are no bins to check.'
+            ? 'This site has no published layout, so there are no locations to check.'
             : r.raised > 0
               ? `${r.raised} pallet${r.raised === 1 ? '' : 's'} sitting outside their block`
               : 'Everything is where its rules say it should be',
@@ -259,7 +259,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
 
       {view === 'left' && (
         <p className="text-xs text-stone-500 max-w-[68ch]">
-          Tasks somebody decided to leave. They stay quiet while the bin holds
+          Tasks somebody decided to leave. They stay quiet while the location holds
           the same stock or less; more arriving raises them again on its own.
           Restore lifts the decision now and checks the product again.
         </p>
@@ -424,7 +424,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
               dismissed it" is not an answer. */}
           <span className="mt-1 block text-[10px] text-stone-500">
             Recorded against the task. It will not be raised again unless more
-            stock arrives in this bin — a bigger pile is a different problem. You
+            stock arrives in this location — a bigger pile is a different problem. You
             can bring it back any time from <span className="font-medium text-stone-500">Left alone</span>.
           </span>
         </label>

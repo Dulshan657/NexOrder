@@ -99,7 +99,7 @@ export function ReviewStep({
         <PackageOpen className="mx-auto h-8 w-8 text-stone-300" strokeWidth={1.5} aria-hidden="true" />
         <p className="mt-2 text-sm text-stone-600">Nothing to check yet</p>
         <p className="mt-1 text-[11px] text-stone-500">
-          {missingSelection ? 'Paint some bins on the map first.' : 'Give the block a name first.'}
+          {missingSelection ? 'Paint some locations on the map first.' : 'Give the block a name first.'}
         </p>
         <button
           type="button"
@@ -254,7 +254,7 @@ export function ReviewStep({
 
       {preview.willRecode === 0 && !refused && !drifted && (
         <Callout dense>
-          Every selected bin already carries the code this sweep would give it.
+          Every selected location already carries the code this sweep would give it.
         </Callout>
       )}
     </div>

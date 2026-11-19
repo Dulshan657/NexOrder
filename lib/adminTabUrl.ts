@@ -37,6 +37,7 @@ export type AdminTab =
   | 'Putaway'
   | 'Replenishment'
   | 'Off-home'
+  | 'Where is it'
   | 'Stocktake'
   | 'Pick Queue'
   | 'Dispatched'
@@ -66,6 +67,7 @@ export const ADMIN_TABS: ReadonlyArray<AdminTab> = [
   'Putaway',
   'Replenishment',
   'Off-home',
+  'Where is it',
   'Stocktake',
   'Pick Queue',
   'Dispatched',
@@ -114,6 +116,7 @@ export const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   Putaway: 'Putaway',
   Replenishment: 'Replenishment',
   'Off-home': 'Off-home',
+  'Where is it': 'Where is it?',
   Stocktake: 'Stocktake',
   'Pick Queue': 'Pick Queue',
   Dispatched: 'Dispatched',
@@ -184,6 +187,7 @@ const TAB_MODULES: Partial<Record<AdminTab, ModuleName>> = {
   Putaway: 'inventory_dispatch',
   Replenishment: 'inventory_dispatch',
   'Off-home': 'inventory_dispatch',
+  'Where is it': 'inventory_dispatch',
   Stocktake: 'inventory_dispatch',
   'Pick Queue': 'inventory_dispatch',
   Dispatched: 'inventory_dispatch',
@@ -251,6 +255,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Putaway',
     'Replenishment',
     'Off-home',
+    'Where is it',
     'Stocktake',
     'Pick Queue',
     'Dispatched',
@@ -268,6 +273,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Putaway',
     'Replenishment',
     'Off-home',
+    'Where is it',
     'Stocktake',
     'Stock',
     'Documents',

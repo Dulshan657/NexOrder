@@ -16,7 +16,7 @@ import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.
 import { EdgeFunctionError, isEdgeFunctionError } from './errors.ts'
 
 /** What the floor sees when the home could not be read. Detail goes to the log. */
-export const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
+export const HOME_UNAVAILABLE = 'Home location unavailable, try again.'
 
 /** True for the fail-closed answer above, wherever it was thrown. */
 export function isHomeUnavailable(e: unknown): boolean {
@@ -39,7 +39,7 @@ export async function refuseIfHomeBlocked(
     p_to_location_id: toLocationId,
   })
   if (error) {
-    console.error(`[wie_home_block] task ${recId} -> bin ${toLocationId}: ${error.message}`)
+    console.error(`[wie_home_block] task ${recId} -> location ${toLocationId}: ${error.message}`)
     throw new EdgeFunctionError('INTERNAL', HOME_UNAVAILABLE)
   }
   // NULL is the only "allowed". Anything else that is not a refusal text is a
@@ -49,6 +49,6 @@ export async function refuseIfHomeBlocked(
   if (typeof data === 'string' && data.length > 0) {
     throw new EdgeFunctionError('CONFLICT', data)
   }
-  console.error(`[wie_home_block] task ${recId} -> bin ${toLocationId}: unexpected reply ${JSON.stringify(data)}`)
+  console.error(`[wie_home_block] task ${recId} -> location ${toLocationId}: unexpected reply ${JSON.stringify(data)}`)
   throw new EdgeFunctionError('INTERNAL', HOME_UNAVAILABLE)
 }

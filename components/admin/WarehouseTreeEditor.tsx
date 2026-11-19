@@ -25,7 +25,7 @@ interface AddFormState {
   capacity: string;
 }
 
-const KIND_LABEL: Record<NodeKind, string> = { ZONE: 'Zone', BIN: 'Bin', SHELF: 'Shelf' };
+const KIND_LABEL: Record<NodeKind, string> = { ZONE: 'Zone', BIN: 'Location', SHELF: 'Shelf' };
 
 const WarehouseTreeEditor: React.FC<WarehouseTreeEditorProps> = ({ warehouse, onClose }) => {
   const { data: locations, isLoading } = useWarehouseLocations(warehouse.id);
@@ -147,7 +147,7 @@ const WarehouseTreeEditor: React.FC<WarehouseTreeEditorProps> = ({ warehouse, on
       dirty={isDirty}
       icon={<Boxes className="w-4 h-4 text-nexgen-blue" />}
       title={`${warehouse.name} — storage layout`}
-      description="Build zones, bins and shelves. Click + on a node to add a child."
+      description="Build zones, locations and shelves. Click + on a node to add a child."
     >
       {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
       <div className="flex items-center justify-between mb-2">
@@ -176,7 +176,7 @@ const WarehouseTreeEditor: React.FC<WarehouseTreeEditorProps> = ({ warehouse, on
       {isLoading ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-8 rounded bg-stone-100 animate-pulse" />)}</div>
       ) : rootKids.length === 0 ? (
-        <p className="text-sm text-stone-500 py-6 text-center">No storage locations yet. Add a top-level zone or bin.</p>
+        <p className="text-sm text-stone-500 py-6 text-center">No storage locations yet. Add a top-level zone or location.</p>
       ) : (
         <div>{rootKids.map((k) => renderNode(k, 0))}</div>
       )}

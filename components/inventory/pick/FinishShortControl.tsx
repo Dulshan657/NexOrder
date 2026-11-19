@@ -92,7 +92,7 @@ export const FinishShortControl: React.FC<FinishShortControlProps> = ({ orderId,
       </p>
       {bin && (
         <p className="text-xs text-stone-700">
-          The bin {bin.code} will be flagged for a recount.
+          The location {bin.code} will be flagged for a recount.
         </p>
       )}
       {error && (

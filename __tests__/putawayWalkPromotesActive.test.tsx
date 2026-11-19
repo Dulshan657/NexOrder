@@ -161,9 +161,9 @@ describe('putaway walk — the open stop is hoisted, not remounted', () => {
     // Two live scan inputs on one screen is a coin toss over which hears the
     // gun, because an Android IME types into the focused editable and nowhere
     // else. With nothing open, the finder is the one scan target.
-    expect(screen.getByLabelText(/plate, carton or bin/i)).toBeTruthy()
+    expect(screen.getByLabelText(/plate, carton or location/i)).toBeTruthy()
 
     fireEvent.click(rowButtons()[2])
-    expect(screen.queryByLabelText(/plate, carton or bin/i)).toBeNull()
+    expect(screen.queryByLabelText(/plate, carton or location/i)).toBeNull()
   })
 })

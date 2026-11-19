@@ -50,7 +50,7 @@ const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 /** Opened once per product on the Walk; a few a minute is plenty. */
 const RATE = { windowMs: 60_000, max: 30 }
 
-const LIST_FAILED = 'Could not list bins for a home, try again.'
+const LIST_FAILED = 'Could not list locations for a home, try again.'
 
 const isPositiveWhole = (raw: string): boolean =>
   /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw)) && Number(raw) > 0
@@ -94,7 +94,7 @@ serve(async (req: Request) => {
     assertMayActAtWarehouse(
       { role: auth.role, homeWarehouseId: auth.profile.home_warehouse_id },
       warehouseId,
-      'You can only list bins at your own warehouse',
+      'You can only list locations at your own warehouse',
     )
 
     const rl = await checkRateLimit(`home-bin-choices:${auth.userId}`, RATE)

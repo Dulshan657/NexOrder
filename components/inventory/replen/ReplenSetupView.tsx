@@ -424,7 +424,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
               </th>
               <th className="px-2 py-2 font-medium">Product</th>
               <th className="px-2 py-2 font-medium text-right">Here</th>
-              <th className="px-2 py-2 font-medium">Home bin</th>
+              <th className="px-2 py-2 font-medium">Home location</th>
               <th className="px-2 py-2 font-medium">Min</th>
               <th className="px-2 py-2 font-medium">Max</th>
               <th className="px-2 py-2 font-medium">Suggested</th>

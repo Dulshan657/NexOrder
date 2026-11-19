@@ -36,7 +36,7 @@ import { maxStartOffset, SHEET_PRESET_INFO } from '@/supabase/functions/_shared/
 const KIND_GROUPS: Array<{ label: string; helper: string; kinds: string[] }> = [
   {
     label: 'Storable slots',
-    helper: 'Bins and rack levels — the places putaway and picking direct people to.',
+    helper: 'Locations and rack levels — the places putaway and picking direct people to.',
     kinds: ['BIN', 'SHELF', 'BAY', 'RACK'],
   },
   {
@@ -194,7 +194,7 @@ const LabelPrintingSection: React.FC = () => {
           <h3 className="font-display font-semibold text-stone-900">Print labels</h3>
           <p className="text-sm text-stone-500">
             Barcode stickers for locations and products. Scanning one anywhere in the app resolves it to
-            that exact bin or SKU.
+            that exact location or SKU.
           </p>
         </div>
       </header>
@@ -217,7 +217,7 @@ const LabelPrintingSection: React.FC = () => {
           </select>
           {mode === 'layout' && (
             <p className="text-xs text-stone-500 mt-1">
-              Bins, rack levels, aisle signs and staging for one published layout — tracked, so a
+              Locations, rack levels, aisle signs and staging for one published layout — tracked, so a
               re-run only covers what has no sticker yet.
             </p>
           )}

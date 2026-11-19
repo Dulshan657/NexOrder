@@ -191,10 +191,10 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
             />
             <p className="mt-2 text-xs text-stone-500">
               {stage === 'assign'
-                ? 'Decide which bin each top-up comes from. Nothing moves until someone carries it.'
+                ? 'Decide which location each top-up comes from. Nothing moves until someone carries it.'
                 : stage === 'walk'
-                  ? 'Pull from the source bin and place it in the pick zone. This is when the stock moves.'
-                  : 'Nothing is replenished until a product has a minimum, a maximum and a pick-zone home bin. Set them here for the whole site at once.'}
+                  ? 'Pull from the source location and place it in the pick zone. This is when the stock moves.'
+                  : 'Nothing is replenished until a product has a minimum, a maximum and a pick-zone home location. Set them here for the whole site at once.'}
             </p>
           </div>
 

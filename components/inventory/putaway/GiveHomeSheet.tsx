@@ -34,7 +34,7 @@ export interface GiveHomeSheetProps {
 }
 
 const notOffered = (code: string) =>
-  `${code} can't be this product's home. Pick one of the bins listed.`
+  `${code} can't be this product's home. Pick one of the locations listed.`
 
 /** `code — name`, or the code alone when the bin has no name worth adding. */
 const optionLabel = (bin: HomeBinChoice) => {
@@ -88,7 +88,7 @@ export function GiveHomeSheet({
       width="md"
       mobile="bottom"
       icon={<Home className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />}
-      title={`Give ${sku} a home bin`}
+      title={`Give ${sku} a home location`}
       // The trap puts focus on the first control, which is the close button. A
       // scan only reaches the FOCUSED field on the RS35, so hand it to the scan
       // field once the sheet has settled.
@@ -115,28 +115,28 @@ export function GiveHomeSheet({
     >
       <div ref={bodyRef} className="space-y-4">
         {choices.isLoading ? (
-          <p className="text-sm text-stone-600">Loading bins…</p>
+          <p className="text-sm text-stone-600">Loading locations…</p>
         ) : choices.isError ? (
           <p className="text-sm text-red-600" role="alert">
-            {choices.error instanceof Error ? choices.error.message : 'Could not list bins for a home, try again.'}
+            {choices.error instanceof Error ? choices.error.message : 'Could not list locations for a home, try again.'}
           </p>
         ) : bins.length === 0 ? (
-          <p className="text-sm text-stone-700">No bin in this warehouse can be its home right now.</p>
+          <p className="text-sm text-stone-700">No location in this warehouse can be its home right now.</p>
         ) : (
           <>
             <ScanField
-              label="Scan or type the bin code"
+              label="Scan or type the location code"
               value={code}
               onChange={(v) => { setCode(v); setError(null) }}
               onScan={chooseCode}
               flash={flash}
-              cameraTitle="Scan the bin label"
+              cameraTitle="Scan the location label"
               autoFocus
               error={error ?? undefined}
             />
             <div>
               <label htmlFor={pickId} className="mb-1.5 block text-xs font-semibold text-stone-600">
-                Or pick a bin
+                Or pick a location
               </label>
               <Select
                 id={pickId}
@@ -149,7 +149,7 @@ export function GiveHomeSheet({
                   setError(null)
                 }}
               >
-                <option value="">Choose a bin</option>
+                <option value="">Choose a location</option>
                 {bins.map((b) => (
                   <option key={b.binId} value={b.binCode}>{optionLabel(b)}</option>
                 ))}

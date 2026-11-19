@@ -258,8 +258,8 @@ export function AreaPaintToolbar({
         {signLayer
           // The distinction the whole two-layer split exists to make. Said here,
           // where the operator is about to act, not only in the confirm dialog.
-          ? 'A sign is wayfinding text only — it renames no bin, sets no zone and needs no republish.'
-          : 'An area names the bins inside it and can move them between zones — Save will show you exactly what changes.'}
+          ? 'A sign is wayfinding text only — it renames no location, sets no zone and needs no republish.'
+          : 'An area names the locations inside it and can move them between zones — Save will show you exactly what changes.'}
       </p>
     </div>
   )

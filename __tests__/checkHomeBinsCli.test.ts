@@ -40,10 +40,10 @@ describe('formatProblem', () => {
     const line = formatProblem(
       { code: 'WH-1', name: 'Main' },
       { sku: 'TST-HOME-200', binCode: 'TST-A-01-1' },
-      { code: 'inactive', message: 'Bin TST-A-01-1 is inactive, so putaway never offers it.' },
+      { code: 'inactive', message: 'Location TST-A-01-1 is inactive, so putaway never offers it.' },
     )
     expect(line).toBe(
-      'WH-1 | TST-HOME-200 | TST-A-01-1 | inactive | Bin TST-A-01-1 is inactive, so putaway never offers it.',
+      'WH-1 | TST-HOME-200 | TST-A-01-1 | inactive | Location TST-A-01-1 is inactive, so putaway never offers it.',
     )
     expect(line).not.toContain('\n')
   })

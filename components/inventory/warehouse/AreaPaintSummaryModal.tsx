@@ -219,7 +219,7 @@ export function AreaPaintSummaryModal({
               </p>
             ))}
             <p className="text-[11px] text-stone-500">
-              Signs are wayfinding text — no bin is renamed, no zone changes, and the layout does
+              Signs are wayfinding text — no location is renamed, no zone changes, and the layout does
               not need republishing.
             </p>
           </div>
@@ -262,8 +262,8 @@ export function AreaPaintSummaryModal({
 
             {!willWriteAreas ? (
               <p className="text-xs text-stone-500">
-                The areas are untouched, so nothing about them will be written — no bin is renamed
-                and no bin changes zone.
+                The areas are untouched, so nothing about them will be written — no location is renamed
+                and no location changes zone.
               </p>
             ) : preview.willRename > 0 ? (
               <label className="flex items-start gap-2 rounded-lg border border-stone-200 bg-stone-50 p-2.5 text-xs text-stone-700">
@@ -275,7 +275,7 @@ export function AreaPaintSummaryModal({
                 />
                 <span>
                   <span className="font-medium text-stone-800">
-                    Also rename the bins inside these areas
+                    Also rename the locations inside these areas
                   </span>
                   <span className="block text-stone-500">
                     {preview.racks} rack{preview.racks === 1 ? '' : 's'}
@@ -286,7 +286,7 @@ export function AreaPaintSummaryModal({
                 </span>
               </label>
             ) : (
-              <p className="text-xs text-stone-500">No bin names need changing.</p>
+              <p className="text-xs text-stone-500">No location names need changing.</p>
             )}
 
             {cascade && preview.examples.length > 0 && (
@@ -363,8 +363,8 @@ export function AreaPaintSummaryModal({
                 {preview.categoryWarnings.map((w) => (
                   <p key={w.areaName}>
                     <span className="font-medium">{w.areaName}</span> allows only some categories, but{' '}
-                    {w.bins} bin{w.bins === 1 ? '' : 's'} in it hold {w.categories.join(', ')}. Putaway
-                    will stop offering {w.bins === 1 ? 'that bin' : 'those bins'} for{' '}
+                    {w.bins} location{w.bins === 1 ? '' : 's'} in it hold {w.categories.join(', ')}. Putaway
+                    will stop offering {w.bins === 1 ? 'that location' : 'those locations'} for{' '}
                     {w.categories.length === 1 ? 'that category' : 'those categories'} — the stock
                     already there is not moved.
                   </p>

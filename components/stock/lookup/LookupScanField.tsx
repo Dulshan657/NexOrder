@@ -28,8 +28,8 @@ export function LookupScanField({ value, onChange, onScan, flash }: LookupScanFi
       value={value}
       onChange={onChange}
       onScan={onScan}
-      ariaLabel="Scan or type a product, bin or pallet code"
-      placeholder="Scan a product, bin or pallet"
+      ariaLabel="Scan or type a product, location or pallet code"
+      placeholder="Scan a product, location or pallet"
       cameraTitle="Scan a code"
       flash={flash}
       // NOT `compact`: that variant drops the camera button and the 44px floor,

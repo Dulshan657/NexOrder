@@ -36,7 +36,7 @@ const REFUSALS: Record<string, { code: ErrorCode; message: string }> = {
   NOT_IMPORTED: { code: 'CONFLICT', message: 'Only an order imported from an invoice can be finished short.' },
   ORDER_CANCELLED: { code: 'CONFLICT', message: 'This order was cancelled. Stop picking it and put anything already taken back.' },
   INVALID_STATUS: { code: 'CONFLICT', message: 'This order is not being picked any more, so a line cannot be finished short.' },
-  BAD_LOCATION: { code: 'INVALID_INPUT', message: 'That bin is not in an active warehouse picking this order.' },
+  BAD_LOCATION: { code: 'INVALID_INPUT', message: 'That location is not in an active warehouse picking this order.' },
 }
 
 interface CloseResult {

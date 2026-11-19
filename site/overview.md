@@ -19,7 +19,7 @@ are known mainly by the people who work in it.
 Nex Order puts those on one ledger. An order can arrive as an email from a
 customer's procurement system, be keyed in by an office rep, or be placed by the
 customer themselves — and from that point it is the same order, priced the same
-way, drawing on the same stock, picked from the same bins.
+way, drawing on the same stock, picked from the same locations.
 
 ## What it does
 
@@ -33,7 +33,7 @@ breaks are resolved in one place, so the price a rep quotes is the price the
 invoice carries.
 
 **The warehouse is addressed, not guessed at.** Stock is tracked by product,
-location, batch and pallet. Pickers are routed bin by bin along the shortest
+location, batch and pallet. Pickers are routed location by location along the shortest
 walk; goods are put away where the operator's own rules say they belong;
 replenishment moves stock to pick faces before they run dry; stocktakes are
 counted by location on a handheld.

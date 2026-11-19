@@ -157,7 +157,7 @@ describe('validateStockRow — bin_code', () => {
     expect(result.ok).toBe(false)
     // `!result.ok` does NOT narrow with `strict` off — only `=== false` does.
     if (result.ok !== false) throw new Error('expected failure')
-    expect(result.error).toMatch(/no addressable bins/i)
+    expect(result.error).toMatch(/no addressable locations/i)
   })
 
   it('rejects an over-length bin_code', () => {

@@ -102,7 +102,7 @@ const inputSchema = z.object({
     })
     .optional(),
 }).refine((d) => d.actual_location_id !== undefined || Boolean(d.scan?.locationCode), {
-  message: 'either actual_location_id or a scanned bin code is required',
+  message: 'either actual_location_id or a scanned location code is required',
 }).refine((d) => (d.recommendation_id !== undefined) !== (d.task_ids !== undefined), {
   message: 'give either recommendation_id or task_ids',
 })
@@ -191,7 +191,7 @@ serve(async (req: Request) => {
         anyHeld = await anyLineHeld(admin, ordered)
       } catch (e) {
         console.error('[complete-putaway] hold check failed', e)
-        throw new EdgeFunctionError('INTERNAL', 'Could not check that bin, try again.')
+        throw new EdgeFunctionError('INTERNAL', 'Could not check that location, try again.')
       }
       const held = heldLineHomeRefusal({ makeHome: true, anyHeld })
       if (held) throw new EdgeFunctionError(held.code, held.message)
@@ -212,23 +212,23 @@ serve(async (req: Request) => {
       if (actualId != null && actualId !== (byCode as any).id) {
         throw new EdgeFunctionError(
           'INVALID_INPUT',
-          'The scanned bin and the selected bin disagree — rescan the bin label',
+          'The scanned location and the selected location disagree — rescan the location label',
         )
       }
       actualId = (byCode as any).id
     }
-    if (actualId == null) throw new EdgeFunctionError('INVALID_INPUT', 'No bin given')
+    if (actualId == null) throw new EdgeFunctionError('INVALID_INPUT', 'No location given')
 
     const { data: binRow, error: binErr } = await admin.from('locations')
       .select('id, is_active, code, level_role').eq('id', actualId).single()
-    if (binErr || !binRow) throw new EdgeFunctionError('NOT_FOUND', `Bin ${actualId} not found`)
+    if (binErr || !binRow) throw new EdgeFunctionError('NOT_FOUND', `Location ${actualId} not found`)
     if (!(binRow as any).is_active) {
-      throw new EdgeFunctionError('CONFLICT', 'That bin is no longer active — choose another')
+      throw new EdgeFunctionError('CONFLICT', 'That location is no longer active — choose another')
     }
     const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: actualId })
     if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
     if (root !== warehouseId) {
-      throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not inside this warehouse')
+      throw new EdgeFunctionError('INVALID_INPUT', 'That location is not inside this warehouse')
     }
 
     // ── Validate the scan evidence ───────────────────────────────────────────
@@ -322,11 +322,11 @@ serve(async (req: Request) => {
         )
       } catch (e) {
         // The detail goes to the server log; the operator gets a message they can act on.
-        console.error('[complete-putaway] home bin fitness read failed', e)
-        throw new EdgeFunctionError('INTERNAL', 'Could not check that bin, try again.')
+        console.error('[complete-putaway] home location fitness read failed', e)
+        throw new EdgeFunctionError('INTERNAL', 'Could not check that location, try again.')
       }
       if (homeRefusal !== null) {
-        throw new EdgeFunctionError('CONFLICT', `${(binRow as any).code} can't be a home bin: ${homeRefusal}`)
+        throw new EdgeFunctionError('CONFLICT', `${(binRow as any).code} can't be a home location: ${homeRefusal}`)
       }
     }
 

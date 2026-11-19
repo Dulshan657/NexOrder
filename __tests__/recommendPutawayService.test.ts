@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // decidePutaway, it must throw the server's own words: supabase-js reports any
 // non-2xx as a generic "non-2xx status code" and leaves the real body unread on
 // `.context`, so without this the dock would read nothing about WHY a retry
-// failed ("Home bin unavailable, try again." is the one that matters).
+// failed ("Home location unavailable, try again." is the one that matters).
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke } } }))
 
 import { confirmOverflowPutaway, isPutawayTasksExist, recommendPutaway } from '@/services/supabase/putawayService'
 
-const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
+const HOME_UNAVAILABLE = 'Home location unavailable, try again.'
 
 function httpError(message: string, status = 500, code = 'INTERNAL', details?: unknown) {
   return Object.assign(new Error('Edge Function returned a non-2xx status code'), {
@@ -85,7 +85,7 @@ describe('recommendPutaway', () => {
         httpError(EXISTS, 409, 'CONFLICT'),
         httpError(EXISTS, 409, 'CONFLICT', { reason: 'something_else' }),
         httpError(EXISTS, 500, 'INTERNAL', { reason: 'putaway_tasks_exist' }),
-        httpError('Home bin unavailable, try again.'),
+        httpError('Home location unavailable, try again.'),
         new Error('Failed to fetch'),
       ]
       for (const error of other) {
@@ -128,7 +128,7 @@ describe('confirmOverflowPutaway', () => {
   })
 
   it("throws the server's words on a refusal", async () => {
-    const stale = 'The suggested bin for this line is now TST-WALK-O2; scan that one.'
+    const stale = 'The suggested location for this line is now TST-WALK-O2; scan that one.'
     invoke.mockResolvedValue({ data: null, error: httpError(stale, 409, 'CONFLICT') })
     await expect(confirmOverflowPutaway(9, 44)).rejects.toThrow(stale)
   })

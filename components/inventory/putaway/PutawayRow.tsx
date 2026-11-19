@@ -127,7 +127,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
                 <span className="truncate">{mismatch.label}</span>
               </span>
             ) : (
-              <span className="text-amber-700">No eligible bin</span>
+              <span className="text-amber-700">No eligible location</span>
             )}
           </p>
 
@@ -135,7 +135,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             <button
               onClick={onToggleExplanation}
               className="touch-target p-1.5 rounded-lg hover:bg-stone-100 btn-press inline-flex items-center justify-center"
-              aria-label={`Why this bin for ${name}?`}
+              aria-label={`Why this location for ${name}?`}
             >
               <HelpCircle className="w-4 h-4 text-stone-500" />
             </button>
@@ -157,7 +157,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
                   : 'border border-stone-200 text-stone-600'
               }`}
             >
-              <MapPin className="w-3.5 h-3.5" /> Choose bin
+              <MapPin className="w-3.5 h-3.5" /> Choose location
             </button>
             {/* "Place now" is the pre-00080 one-step path, kept for desk and
                 bulk work — notably the CSV opening-stock import, where nobody
@@ -166,7 +166,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             <button
               onClick={onPlaceNow}
               disabled={!row.recommendedLocationId || busy}
-              title="Move the stock straight into the bin, without a walk"
+              title="Move the stock straight into the location, without a walk"
               className="touch-target-y inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 btn-press disabled:opacity-40"
             >
               <Check className="w-3.5 h-3.5" /> Place now

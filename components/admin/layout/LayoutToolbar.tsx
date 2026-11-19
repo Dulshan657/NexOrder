@@ -289,8 +289,8 @@ export function LayoutToolbar({
                     ? <>Next rack drawn here will be called <span className="font-medium text-stone-500">{nextRackName}</span>. </>
                     : null}
                   {areaOnly
-                    ? 'This layout is live. Saving replaces its areas and offers to rename the bins inside them — nothing else on the plan is touched.'
-                    : 'Renaming an area renames every bin inside it — including on the live map, before you publish.'}
+                    ? 'This layout is live. Saving replaces its areas and offers to rename the locations inside them — nothing else on the plan is touched.'
+                    : 'Renaming an area renames every location inside it — including on the live map, before you publish.'}
                 </>}
           </p>
         </div>
@@ -334,7 +334,7 @@ export function LayoutToolbar({
           <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-500">
             {signIssue
               ? <span className="font-medium text-amber-600">{signIssue}</span>
-              : 'A sign is wayfinding text only — it renames no bins, sets no zone and changes no routing. Drag across cells to size it.'}
+              : 'A sign is wayfinding text only — it renames no locations, sets no zone and changes no routing. Drag across cells to size it.'}
           </p>
         </div>
       )}

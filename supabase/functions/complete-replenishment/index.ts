@@ -45,7 +45,7 @@ const inputSchema = z.object({
   }).optional(),
 }).refine(
   (d) => d.actual_from_location_id != null || d.scan?.fromLocationCode,
-  { message: 'Scan the bin you pulled from, or choose it' },
+  { message: 'Scan the location you pulled from, or choose it' },
 ).refine(
   (d) => d.actual_to_location_id != null || d.scan?.toLocationCode,
   { message: 'Scan the pick slot you placed into, or choose it' },
@@ -68,7 +68,7 @@ async function resolveBin(
     if (id != null && id !== byCode.id) {
       throw new EdgeFunctionError(
         'INVALID_INPUT',
-        `The scanned ${label} and the selected ${label} disagree — rescan the bin label`,
+        `The scanned ${label} and the selected ${label} disagree — rescan the location label`,
       )
     }
     id = byCode.id
@@ -108,7 +108,7 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError(
         'CONFLICT',
         (task as any).status === 'suggested'
-          ? 'That task has not been assigned a source bin yet'
+          ? 'That task has not been assigned a source location yet'
           : `This task was already ${(task as any).status} — someone else may have moved it`,
       )
     }
@@ -120,17 +120,17 @@ serve(async (req: Request) => {
 
     const scannedFrom = normalizeScan(scan?.fromLocationCode ?? '')
     const scannedTo = normalizeScan(scan?.toLocationCode ?? '')
-    const fromId = await resolveBin(admin, actual_from_location_id, scannedFrom, 'source bin')
+    const fromId = await resolveBin(admin, actual_from_location_id, scannedFrom, 'source location')
     const toId = await resolveBin(admin, actual_to_location_id, scannedTo, 'pick slot')
 
     if (fromId === toId) {
-      throw new EdgeFunctionError('INVALID_INPUT', 'The source and the pick slot are the same bin')
+      throw new EdgeFunctionError('INVALID_INPUT', 'The source and the pick slot are the same location')
     }
 
     // Both bins must be active and inside THIS warehouse. Resolve each bin's
     // ROOT rather than comparing raw ids — a levelled bin's id is nothing like
     // its warehouse's.
-    for (const [id, label] of [[fromId, 'source bin'], [toId, 'pick slot']] as const) {
+    for (const [id, label] of [[fromId, 'source location'], [toId, 'pick slot']] as const) {
       const { data: loc } = await admin.from('locations')
         .select('id, code, is_active').eq('id', id).maybeSingle()
       if (!loc) throw new EdgeFunctionError('NOT_FOUND', `Location ${id} not found`)
@@ -218,7 +218,7 @@ serve(async (req: Request) => {
       if (msg.includes('INSUFFICIENT_STOCK')) {
         throw new EdgeFunctionError(
           'CONFLICT',
-          'Not enough free stock left in that bin — some of it was reserved for an order after this task ' +
+          'Not enough free stock left in that location — some of it was reserved for an order after this task ' +
             'was assigned. Reduce the quantity, or pull from another bay.',
           { reason: 'insufficient_stock' },
         )
@@ -226,7 +226,7 @@ serve(async (req: Request) => {
       if (msg.includes('INVALID_DESTINATION')) {
         throw new EdgeFunctionError(
           'CONFLICT',
-          'That bin is not a pick zone, so replenishing into it would leave the slot this task exists to refill ' +
+          'That location is not a pick zone, so replenishing into it would leave the slot this task exists to refill ' +
             'still short.',
           { reason: 'invalid_destination' },
         )
