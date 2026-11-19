@@ -65,11 +65,11 @@ reps the same calm, consistent, actionable page.
 |---|---|---|---|
 | A1 | claimed | `RepDashboard > KPI deltas compare this period with the previous one` (prev month 2×$100, this month $300 → $300.00, +50.0%; the old half-split said +300% on all-time $500), `RepDashboard > offers the same period picker as Admin` | |
 | A2 | claimed | `RepDashboard > visit completion follows the period` (this period 2/2 visited, previous 1/2 → 100%, +50.0 pts) | Added after check:brief flagged A2 as unproved |
-| A3 | not-claimed | Field Rep view walked on dev (layout order as specified) | Office Rep view not yet walked |
+| A3 | claimed | Walked on dev (`454e1c0`) as Field Rep Charlie Brown and Office Rep Emma Chen: layout order as specified; Office Rep has no route card, no Visit completion tile, no Scheduled Visits links | Owner signed in; the assistant drove the page |
 | A4 | claimed | `RepDashboard > a top customer row starts an order`, `RepDashboard > a low-stock row opens Stock`, `repDashNav > withholds a view the rep cannot open`, `RepDashboard without the shop module > offers no start-order link` | The gate found start-order links reaching a blank page on a build without the shop module (Amadiya); fixed in `repCanStartOrder`. Reorder, at-risk, accounts and visits links are wired the same way but not each unit-tested |
 | A5 | claimed | `RepDashboard > every card title shares one style`; trend is the shared `SalesLineChart` with `previous`; `dailySeries` uses `appDateKeysBetween` | |
 | A6 | claimed | rankings are memoised on the period's metric rows; every date goes through `'en-AU'` / `formatShortDate` | |
-| A7 | not-claimed | Owner signed in as a Field Rep (Charlie Brown) on dev; the assistant walked it: Plan visits → Scheduled Visits, a low-stock row → Stock, an at-risk Visit → check-in modal (cancelled), Revenue → the rep's orders | Office Rep walk still to do |
+| A7 | claimed | Field Rep: Plan visits → Scheduled Visits, low-stock row → Stock, at-risk Visit → check-in (cancelled), Revenue → the rep's orders. Office Rep: dashboard renders with her 61 orders after a reload | Found on the way: the app keeps the previous user's cached data across sign-out/sign-in (see Not claimed) |
 | A8 | claimed | `RepDashboard walk fixes > shows only current targets, with ended ones behind Past targets`, `… hides Visit completion from an Office Rep`, `… shows no visit change when nothing was planned` | From the Field Rep walk: six targets incl. ended Oct/Apr ones, a "$1,537 to go" chip off an ended target, and "−86 pts" against 0 planned visits |
 
 Full suite: 463 files / 7058 tests pass. `tsc --noEmit`, `lint`, `check:overlays`, `check:viewport` clean.
@@ -78,7 +78,8 @@ Also in this PR, not named in the Approach: `ExpandableSection`, `HorizontalBarC
 
 ### Not claimed
 
-- The Office Rep view has not been walked yet; the owner signs in, the assistant cannot.
+- **Not fixed here, pre-existing:** signing out and in as someone else in the same tab keeps the previous user's cached orders (TanStack cache is never cleared on an auth change, keys carry no user, 5-min staleTime). Emma's dashboard first showed Charlie's 130 orders; a reload fixed it. Reported to the owner for its own PR.
+- While orders load, the dashboard shows "All clear" and $0 rather than a loading state.
 - Phone width (360px) not checked in a browser; the `mobile` Playwright project was not run.
 - Colour contrast of the restyled route hero and chips not measured.
 - Dev also carries unmerged NX-0040; the dev check is of that combination.
