@@ -122,3 +122,28 @@ input on the putaway tab; and one tidy card instead of "Ask the engine" wrapping
 - Amadiya. `inventory_dispatch` is on there, but this ships to it only at its next `rel-*` release.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `productWhereabouts > marks stock in the home bin as home…` and `> leaves out a location holding none of the product` (base could not load the module; pass on tip) | |
+| A2 | claimed | `newDeliveryReason > says home when the home has room, overflow with the headroom when it is full, and no home bin set without one` (base could not load; passes on tip) | |
+| A3 | claimed | `pickWalkStops > visits every bin with available stock and never the dock root or a fully allocated bin` (base could not load; passes on tip) | |
+| A4 | claimed | `walkSummary > numbers the stops, sums the legs and writes one step line per stop` (base could not load; passes on tip) | |
+| A5 | claimed | `explain-product-location` is deployed on dev (OPTIONS 200; an unknown function 404s); `check:edge-types` 89 clean | The authenticated call on dev for a product in home and overflow is not recorded here |
+| A6 | claimed | `FindProductSection` › scanned product summary, walk handed to the map, unknown barcode asks nothing (base could not load; pass on tip) | |
+| A7 | claimed | `WhereIsItScreen > shows the summary and both walks as numbered step lists` (base could not load); `roleCanOpenTab > a Warehouse user can open Where is it` fails on base, passes on tip | |
+| A8 | not-claimed | dev serves `5fa5e2a`, which contains this branch (`1f0c9e3`) | The owner's final walk at 360 px is not recorded; the merge sha is not on dev yet |
+| A9 | claimed | `describePlace > names a rack level by its rack and level, a bay by its name and zone, and the root as the dock`; `FindProductSection > never calls a place a bin` (base could not load; pass on tip) | |
+| A10 | claimed | `FindProductSection > hands the places holding the product to the map to highlight, and clears them`; `holdingMarkers > outlines every place holding the product…` fails on base, passes on tip | |
+| A11 | claimed | `AskEnginePanel > the putaway tab takes a scanned product` fails on base, passes on tip | |
+| A12 | claimed | `AskEnginePanel > is one card with a tab per question and no test bench box` fails on base, passes on tip | |
+| A13 | claimed | `WarehouseTreePanel > starts with every group collapsed and opens the groups above a selected place` fails on base, passes on tip | |
+| A14 | claimed | `user-facing wording > no screen calls a place a bin` fails on base, passes on tip, including after main (NX-0037, 0041–0044) was merged in; full suite 7102/7102 | |
+| A15 | claimed | `user-facing wording > no server message calls a place a bin` fails on base, passes on tip; `migrate:dev --dry-run` reports nothing pending, so 00147 is on dev | The rolled-back rehearsal and a refused putaway reading "location" on dev are not recorded here |
+
+### Not claimed
+
+- The owner's final walk on dev (A8). The release to Amadiya was approved on 2026-11-19 without that walk being recorded.
+- Proof on dev that a refused putaway now says "location" (A15) and an authenticated `explain-product-location` call (A5). Both functions and 00147 are deployed; the readings were not captured.
+- Bulk (non-racked) warehouses get the summary but no walk.
+- Anything on Amadiya before its `rel-*` tag.
