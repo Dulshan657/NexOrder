@@ -68,7 +68,7 @@ button, which crashes on main today.
 | A4 | claimed | `ActionItemsBoard > a clickable row is a keyboard-operable button`, `… dismiss and snooze are named buttons, and dismissing persists under the same key` (asserts the `nexorder_v1_admin_action_items` key and the four BoardState fields) | |
 | A5 | claimed | `TimePeriodToggle > marks the selected period with aria-pressed` | |
 | A6 | claimed | `__tests__/dashboard/kit.test.tsx` (RankedList, TargetBar, EmptyState, DashCard, dashboardFormat) | |
-| A7 | claimed (part) | dev serves `923588d` (merge of dev's previous `a1c4b4a` = main + unmerged NX-0040, with this branch), health 200; Admin dashboard walked at 1440px: new KPI tiles, Action Items header "116 open · 7 urgent", columns, Set Targets | Rep, Manager and Office Rep not walked; 360px not checked in a browser — see below |
+| A7 | not-claimed | dev serves `923588d` (merge of dev's previous `a1c4b4a` = main + unmerged NX-0040, with this branch), health 200; Admin dashboard walked at 1440px: new KPI tiles, Action Items header "116 open · 7 urgent", columns, Set Targets | Only partly verified: Rep, Manager and Office Rep not walked; 360px not checked in a browser — see Not claimed |
 
 Full suite: 458 files / 7044 tests pass. `tsc --noEmit`, `lint` (baseline pruned by 2), `check:overlays`, `check:viewport`, `check:demo` all clean.
 
