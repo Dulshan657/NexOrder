@@ -57,6 +57,15 @@ describe('AuthProvider', () => {
     expect(queryClient.getQueryData(ORDERS_KEY)).toBeUndefined()
   })
 
+  it('reloads everything as the next user after a sign-out, never keeping what loaded while signed out', async () => {
+    await signedInAs('rep-charlie')
+    onAuthStateChangeCallback!('SIGNED_OUT', null)
+    // Anything a screen fetched while nobody was signed in (RLS: nothing).
+    queryClient.setQueryData(['profiles'], [])
+    onAuthStateChangeCallback!('SIGNED_IN', session('rep-emma'))
+    expect(queryClient.getQueryState(['profiles'])?.isInvalidated).toBe(true)
+  })
+
   it('keeps cached data on a token refresh for the same user', async () => {
     await signedInAs('rep-charlie')
     onAuthStateChangeCallback!('TOKEN_REFRESHED', session('rep-charlie'))

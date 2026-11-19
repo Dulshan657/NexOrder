@@ -82,6 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Who the session belongs to RIGHT NOW. A profile load resolving after a
   // sign-out or account switch is for someone else and must be dropped.
   const currentUserIdRef = useRef<string | null>(null)
+  // NX-0045: a sign-out emptied the cache; the next sign-in must reload it all.
+  const reloadOnNextSignInRef = useRef(false)
   const profileRef = useRef<Profile | null>(null)
   const inFlightRef = useRef<{ userId: string; promise: Promise<void> } | null>(null)
 
@@ -166,20 +168,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       currentUserIdRef.current = nextUserId
       setUser(sessionUser)
 
-      // NX-0045: the person changed (signed out, or someone else signed in), so
-      // nothing loaded for them may survive. Query keys carry no user and the
-      // staleTime is 5 minutes: without this, the next person on a shared
-      // device read the previous person's orders until a refetch. Nothing is
-      // awaited, so it keeps the no-await rule above. A token refresh for
-      // the same user, and the very first sign-in (nothing cached yet), keep
-      // the cache.
-      if (previousUserId !== null && previousUserId !== nextUserId) {
-        // reset, not clear: every query's data goes back to empty, AND any
-        // screen still mounted refetches as the new user instead of keeping
-        // what it was showing. The returned promise is deliberately not
-        // awaited (the refetch waits for the auth lock on its own).
+      // NX-0045: never let one person's cached data reach the next. Query keys
+      // carry no user and the staleTime is 5 minutes, so without this the next
+      // person on a shared device read the previous person's orders. Nothing
+      // here is awaited, so the no-await rule above holds.
+      //   - signed out: drop everything, and refetch NOTHING — a refetch now
+      //     would run with no session, and its empty RLS answer would then be
+      //     kept as fresh for the next person (found on dev: every order
+      //     "Unknown" because the staff list had loaded empty).
+      //   - signed in after a sign-out: everything loads again, as this person.
+      //   - switched straight to another person: reset, then refetch as them.
+      //   - same person (token refresh): keep the cache.
+      if (previousUserId !== null && nextUserId === null) {
+        queryClient.clear()
+        reloadOnNextSignInRef.current = true
+      } else if (previousUserId !== null && nextUserId !== previousUserId) {
         void queryClient.resetQueries()
         queryClient.getMutationCache().clear()
+      } else if (previousUserId === null && nextUserId !== null && reloadOnNextSignInRef.current) {
+        reloadOnNextSignInRef.current = false
+        void queryClient.invalidateQueries()
       }
 
       // Record that a refresh happened, for the shift-long soak test.
