@@ -35,6 +35,8 @@ import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { getPromotionROI } from '../services/promotionROIService';
 import { computeRepProductivity } from '../services/repProductivityService';
 import { computeTargetProgress, filterOrders } from '../lib/semantic';
+import TargetBar from './dashboard/TargetBar';
+import { formatCount, formatMoney, pctDelta } from '../lib/dashboardFormat';
 import { appDateKey, appDateKeysBetween } from '../lib/period';
 import { useDashboardRange } from '../hooks/useDashboardRange';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
@@ -103,7 +105,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + i.amount, 0);
     const collectionRate = totalInvoiced > 0 ? (totalPaid / totalInvoiced) * 100 : 0;
 
-    const delta = (curr: number, prev: number) => prev > 0 ? ((curr - prev) / prev) * 100 : curr > 0 ? 100 : 0;
+    const delta = pctDelta;
 
     return {
       revenue, prevRevenue, revenueDelta: delta(revenue, prevRevenue),
@@ -464,29 +466,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   metricCtx,
                 );
                 const labelMap = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
-                const formatVal = target.type === 'revenue' ? `$${achieved.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(achieved);
-                const formatTarget = target.type === 'revenue' ? `$${target.targetValue.toLocaleString()}` : String(target.targetValue);
-
-                const barColor = percent >= 60 ? 'bg-emerald-500' : percent >= 30 ? 'bg-amber-500' : 'bg-red-500';
+                const isMoney = target.type === 'revenue';
+                const fmt = (n: number) => (isMoney ? formatMoney(n, { cents: false }) : formatCount(n));
 
                 return (
-                  <div key={target.id} className="bg-stone-50 rounded-lg p-3 border border-stone-200">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-medium text-stone-900">{labelMap[target.type]}</span>
-                      <span className="text-xs text-stone-500">{formatVal} / {formatTarget}</span>
-                    </div>
-                    <div className="w-full bg-stone-200 rounded-full h-2">
-                      <div className={`h-2 rounded-full ${barColor} transition-all`} style={{ width: `${percent}%` }} />
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span className="text-xs text-stone-500">
-                        {new Date(target.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(target.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </span>
-                      <span className={`text-xs font-semibold ${percent >= 60 ? 'text-emerald-600' : percent >= 30 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {percent.toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
+                  <React.Fragment key={target.id}>
+                    <TargetBar
+                      label={labelMap[target.type]}
+                      achieved={fmt(achieved)}
+                      target={fmt(target.targetValue)}
+                      percent={percent}
+                      startDate={target.startDate}
+                      endDate={target.endDate}
+                    />
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -497,10 +490,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {MODULE_FIELD_OPS && showTargetModal && onUpdateSalesTargets && (
+        // NX-0041: this passed currentUser/salesTargets/allOrders, none of which
+        // SalesTargetModal takes, so `existingTargets` was undefined and the
+        // dialog crashed the page the moment it opened.
         <SalesTargetModal
-          currentUser={currentUser}
-          salesTargets={salesTargets}
-          allOrders={allOrders}
+          isOpen={showTargetModal}
+          existingTargets={salesTargets}
+          userId={currentUser.id}
           onSave={(targets) => { onUpdateSalesTargets(targets); setShowTargetModal(false); }}
           onClose={() => setShowTargetModal(false)}
         />
