@@ -8,7 +8,7 @@
   "acceptance": [
     { "id": "A1", "check": "When the signed-in user signs out, every cached query (orders, customers, invoices, profiles, …) is dropped at once." },
     { "id": "A2", "check": "When a different user signs in on the same tab, with or without a sign-out between, nothing cached for the previous user survives." },
-    { "id": "A3", "check": "A session refresh for the same user (TOKEN_REFRESHED, or SIGNED_IN for the same id) keeps the cache — no mid-shift reload." },
+    { "id": "A3", "check": "A session refresh for the same user (TOKEN_REFRESHED, or SIGNED_IN for the same id) keeps the cache — no mid-shift reload.", "manual": "guard test `AuthProvider > keeps cached data on a token refresh for the same user` — passes on the base by design (the base never clears), so it cannot be a fail-first; it pins that the fix does not over-clear" },
     { "id": "A4", "check": "On dev, signing in as one rep and then another shows the second rep only their own orders, without a page reload.", "manual": "deploy:dev; the owner signs in as two reps in turn and the assistant reads the dashboard's data" }
   ],
   "failFirst": [
