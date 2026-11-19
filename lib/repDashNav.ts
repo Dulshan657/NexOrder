@@ -9,6 +9,7 @@ import {
   MODULE_INVENTORY_DISPATCH,
   MODULE_INVOICING,
   MODULE_SALES_ORDERS,
+  MODULE_SHOP,
 } from './modules'
 
 export type RepDashView = 'orders' | 'accounts' | 'hoReCas' | 'scheduled_visits' | 'stock'
@@ -42,4 +43,13 @@ export type RepNav = (view: RepDashView) => (() => void) | undefined
 
 export function repNavFor(ctx: RepNavContext, navigate: ((view: RepDashView) => void) | undefined): RepNav {
   return (view) => (navigate && repCanOpen(view, ctx) ? () => navigate(view) : undefined)
+}
+
+/**
+ * Starting an order lands on the Shop (AppShell sets view 'ordering'), which a
+ * build without the shop module never renders — so without it no row may offer
+ * to start one, or the rep gets a blank page.
+ */
+export function repCanStartOrder(): boolean {
+  return MODULE_SHOP
 }

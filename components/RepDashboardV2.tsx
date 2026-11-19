@@ -34,7 +34,7 @@ import { MODULE_SHOP } from '../lib/modules';
 import { appDateKey } from '../lib/period';
 import { dailySeries } from '../lib/dashboardSeries';
 import { formatCount, formatMoney, pctDelta } from '../lib/dashboardFormat';
-import { repNavFor, type RepDashView } from '../lib/repDashNav';
+import { repCanStartOrder, repNavFor, type RepDashView } from '../lib/repDashNav';
 
 // Kitchen QR orders held for approval. Gated at the declaration, so a tenant
 // without the shop module ships no chunk for it.
@@ -80,6 +80,9 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     () => repNavFor({ isFieldRep, canSeeStock: true, isQrStaff: false }, onNavigate),
     [isFieldRep, onNavigate],
   );
+
+  // Starting an order needs the Shop; without the module, nothing offers it.
+  const startOrder = repCanStartOrder() ? onStartOrder : undefined;
 
   // Data source stays global (products.available) — this is a rep-facing
   // surface, not warehouse-scoped. Only the threshold is configurable.
@@ -156,8 +159,8 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         id: `reorder-${p.hoReCaId}`,
         title: p.hoReCaName,
         subtitle: p.daysUntil < 0 ? `Reorder ${-p.daysUntil}d overdue` : p.daysUntil === 0 ? 'Reorder due today' : `Reorder due in ${p.daysUntil}d`,
-        onClick: () => onStartOrder(p.hoReCaId),
-        actions: [{ label: 'Order', icon: ArrowRight, onClick: () => onStartOrder(p.hoReCaId) }],
+        onClick: startOrder ? () => startOrder(p.hoReCaId) : undefined,
+        actions: startOrder ? [{ label: 'Order', icon: ArrowRight, onClick: () => startOrder(p.hoReCaId) }] : undefined,
       }));
 
     const riskItems: ActionItem[] = getAtRiskCustomersForRep(orders, hoReCas, currentUser.id).map(c => ({
@@ -187,7 +190,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
       { id: 'at-risk', label: 'At-risk customers', icon: AlertCircle, severity: 'warning' as const, items: riskItems },
       { id: 'low-stock', label: 'Low stock', icon: Package, severity: 'warning' as const, items: stockItems, onViewAll: toStock },
     ];
-  }, [orders, hoReCas, currentUser.id, myOrders, products, globalThreshold, nav, onStartOrder, canCheckIn, handleCheckIn]);
+  }, [orders, hoReCas, currentUser.id, myOrders, products, globalThreshold, nav, startOrder, canCheckIn, handleCheckIn]);
 
   // ── Trend and rankings, all for the chosen period ────────────────────────
   const revenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, periodFilter);
@@ -209,9 +212,9 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
       label: row.name,
       value: formatMoney(row.revenue, { cents: false }),
       share: max > 0 ? row.revenue / max : 0,
-      onClick: () => onStartOrder(row.horecaId),
+      onClick: startOrder ? () => startOrder(row.horecaId) : undefined,
     }));
-  }, [revenueByCustomer, onStartOrder]);
+  }, [revenueByCustomer, startOrder]);
 
   const toStockTab = nav('stock');
   const topProducts = useMemo((): RankedItem[] => {
@@ -334,10 +337,12 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                               <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> Check in
                             </button>
                           )}
-                          <button type="button" onClick={() => onStartOrder(stop.hoReCaId)}
+                          {startOrder && (
+                          <button type="button" onClick={() => startOrder(stop.hoReCaId)}
                             className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-nexgen-blue-light px-3 py-2 text-xs font-semibold text-nexgen-blue-dark hover:bg-nexgen-blue/15 cursor-pointer touch-target">
                             <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" /> Order
                           </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -431,7 +436,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         </DashCard>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <DashCard title="Top customers" caption="Your revenue this period · tap to start an order">
+          <DashCard title="Top customers" caption={startOrder ? 'Your revenue this period · tap to start an order' : 'Your revenue this period'}>
             <RankedList label="Top customers" items={topCustomers} emptyMessage="No orders in this period" />
           </DashCard>
           <DashCard title="Top products" caption="Units this period" action={toStockTab ? { label: 'Stock', onClick: toStockTab } : undefined}>
