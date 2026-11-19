@@ -18,6 +18,7 @@
 // or lumped in with "unknown code".
 
 import { normalizeScan, resolveScan, type ScanIndex, type ScanMatch } from './resolveScan'
+import { revealScan, scanLength } from './revealScan'
 
 export interface ReceiveScanProduct {
   readonly id: number
@@ -97,7 +98,7 @@ export function describeReceiveRefusal(target: ReceiveScanTarget): string | null
     case 'handlingUnit':
       return `${target.code} is a pallet label. Receiving creates the pallet; it is not scanned in.`
     case 'unknown':
-      return `Nothing in the catalogue matches ${target.normalized}. Search by name, or add the barcode to the product first.`
+      return `Nothing in the catalogue matches ${revealScan(target.normalized)} (${scanLength(target.normalized)} characters). Search by name, or add the barcode to the product first.`
     case 'ambiguous':
       return `${target.normalized} matches more than one thing. Search by name instead.`
     default:
