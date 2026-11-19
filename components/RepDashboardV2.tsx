@@ -1,20 +1,23 @@
-import React, { Suspense, useState, useMemo } from 'react';
-import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, ScheduledVisit } from '../types';
+import React, { Suspense, useCallback, useMemo, useState } from 'react';
+import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, ScheduledVisit, DashboardTimePeriod } from '../types';
 import { UserRole } from '../types';
-import { MapPin, Target, ShoppingBag, DollarSign, BarChart3, CheckCircle2, AlertCircle, Clock, Phone, ArrowRight, Package, UserCheck, Play } from 'lucide-react';
+import { MapPin, Target, ShoppingBag, CheckCircle2, AlertCircle, Clock, ArrowRight, Package, Play } from 'lucide-react';
 import { PageFrame } from './ui/PageFrame';
 import { PageHeader } from './ui/PageHeader';
 import KPICard from './dashboard/KPICard';
 import ActionItemsBoard from './ActionItemsBoard';
 import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
-import ExpandableSection from './dashboard/ExpandableSection';
+import DashCard from './dashboard/DashCard';
+import Band from './dashboard/Band';
+import RankedList, { type RankedItem } from './dashboard/RankedList';
+import TargetBar from './dashboard/TargetBar';
+import EmptyState from './dashboard/EmptyState';
+import TimePeriodToggle from './dashboard/TimePeriodToggle';
 import SalesLineChart from './charts/SalesLineChart';
-import HorizontalBarChart from './charts/HorizontalBarChart';
-import DeltaBadge from './dashboard/DeltaBadge';
 import SalesTargetModal from './SalesTargetModal';
 import SegmentBadge from './SegmentBadge';
 import VisitModal from './visits/VisitModal';
-import { computeAllHoReCaInsights, getReorderPredictions, getAtRiskCustomersForRep } from '../services/buyingPatternsService';
+import { getReorderPredictions, getAtRiskCustomersForRep, computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { getTodaysScheduledVisits } from '../services/scheduledVisitService';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { getVisitCompletionRate } from '../services/repProductivityService';
@@ -22,11 +25,16 @@ import { computeTargetProjection } from '../services/targetProjectionService';
 import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
 import { computeTargetAchieved, computeTargetProgress } from '../lib/semantic';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
+import { useDashboardRange } from '../hooks/useDashboardRange';
 import type { CustomerRevenue, DateRevenue, ProductUnits } from '../lib/semantic';
 import { useSettings } from '../hooks/queries/useSettings';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { MODULE_SHOP } from '../lib/modules';
+import { appDateKey } from '../lib/period';
+import { dailySeries } from '../lib/dashboardSeries';
+import { formatCount, formatMoney, pctDelta } from '../lib/dashboardFormat';
+import { repNavFor, type RepDashView } from '../lib/repDashNav';
 
 // Kitchen QR orders held for approval. Gated at the declaration, so a tenant
 // without the shop module ships no chunk for it.
@@ -46,18 +54,32 @@ interface RepDashboardV2Props {
   routes?: ScheduledVisit[];
   onStartRoute?: (route: ScheduledVisit) => void;
   onViewRoute?: (scheduledVisitId: string) => void;
+  /** NX-0043: where the page's links lead. Gated by lib/repDashNav, the sidebar's own rules. */
+  onNavigate?: (view: RepDashView) => void;
 }
+
+const TOP_N = 5;
+const TARGET_LABELS = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
 
 const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
   currentUser, hoReCas, products, orders, onStartOrder,
   invoices = [], salesTargets = [], onUpdateSalesTargets,
   visits = [], setVisits, routes = [],
-  onStartRoute, onViewRoute,
+  onStartRoute, onViewRoute, onNavigate,
 }) => {
+  const [period, setPeriod] = useState<DashboardTimePeriod>('this_month');
+  const [customStart, setCustomStart] = useState(() => appDateKey(new Date(Date.now() - 30 * 86400000)));
+  const [customEnd, setCustomEnd] = useState(() => appDateKey(new Date()));
   const [showTargetModal, setShowTargetModal] = useState(false);
-  const [showVisitModal, setShowVisitModal] = useState(false);
   const [visitHoReCaId, setVisitHoReCaId] = useState<number | null>(null);
-  const [expandedStop, setExpandedStop] = useState<number | null>(null);
+
+  const isFieldRep = currentUser.role === UserRole.FIELD_REP;
+  // Reps are not HoReCa users, so AppShell's showStockTab is always true for
+  // them, and they are never QR staff.
+  const nav = useMemo(
+    () => repNavFor({ isFieldRep, canSeeStock: true, isQrStaff: false }, onNavigate),
+    [isFieldRep, onNavigate],
+  );
 
   // Data source stays global (products.available) — this is a rep-facing
   // surface, not warehouse-scoped. Only the threshold is configurable.
@@ -66,52 +88,47 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
 
   const myOrders = useMemo(() => orders.filter(o => o.submittedBy.id === currentUser.id), [orders, currentUser.id]);
 
-  // Everything on this screen is scoped to the signed-in rep.
-  const mineFilter = useMemo(() => ({ repId: currentUser.id }), [currentUser.id]);
+  // ── The period: same picker and Sydney calendar as the Admin dashboard ───
+  const dateRange = useDashboardRange(period, customStart, customEnd);
+  const periodFilter = useMemo(
+    () => ({ repId: currentUser.id, from: dateRange.from, to: dateRange.to }),
+    [currentUser.id, dateRange],
+  );
+  const previousFilter = useMemo(
+    () => ({ repId: currentUser.id, from: dateRange.previous.from, to: dateRange.previous.to }),
+    [currentUser.id, dateRange],
+  );
   const metricCtx = useMetricContext({ orders, products, lowStockThreshold: globalThreshold });
 
-  const totalSales = useMetric<number>('sales.revenue', metricCtx, mineFilter);
-  const totalOrders = useMetric<number>('sales.orderCount', metricCtx, mineFilter);
-  const avgOrderValue = useMetric<number>('sales.averageOrderValue', metricCtx, mineFilter);
+  const revenue = useMetric<number>('sales.revenue', metricCtx, periodFilter);
+  const prevRevenue = useMetric<number>('sales.revenue', metricCtx, previousFilter);
+  const orderCount = useMetric<number>('sales.orderCount', metricCtx, periodFilter);
+  const prevOrderCount = useMetric<number>('sales.orderCount', metricCtx, previousFilter);
+  const aov = useMetric<number>('sales.averageOrderValue', metricCtx, periodFilter);
+  const prevAov = useMetric<number>('sales.averageOrderValue', metricCtx, previousFilter);
 
-  // Performance metrics with period-over-period comparison
-  const metrics = useMemo(() => {
-    const sorted = [...myOrders].sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime());
-    const mid = Math.floor(sorted.length / 2);
-    const firstHalf = sorted.slice(0, mid);
-    const secondHalf = sorted.slice(mid);
+  const visitCompletion = useMemo(
+    () => getVisitCompletionRate(visits, routes, currentUser.id, dateRange.from, dateRange.to),
+    [visits, routes, currentUser.id, dateRange],
+  );
+  const prevVisitCompletion = useMemo(
+    () => getVisitCompletionRate(visits, routes, currentUser.id, dateRange.previous.from, dateRange.previous.to),
+    [visits, routes, currentUser.id, dateRange],
+  );
 
-    // The three headline figures come from the registry (see mineFilter). The
-    // half-over-half deltas below stay here: splitting a rep's orders at their
-    // median is a bespoke comparison, not a metric, and it reads the same
-    // canonical stored total the registry does.
-    const uniqueHoReCas = new Set(myOrders.map(o => o.hoReCa?.id).filter(Boolean)).size;
-
-    const firstRevenue = firstHalf.reduce((s, o) => s + o.total, 0);
-    const secondRevenue = secondHalf.reduce((s, o) => s + o.total, 0);
-    const revenueDelta = firstRevenue > 0 ? ((secondRevenue - firstRevenue) / firstRevenue) * 100 : 0;
-
-    const firstAOV = firstHalf.length > 0 ? firstRevenue / firstHalf.length : 0;
-    const secondAOV = secondHalf.length > 0 ? secondRevenue / secondHalf.length : 0;
-    const aovDelta = firstAOV > 0 ? ((secondAOV - firstAOV) / firstAOV) * 100 : 0;
-
-    const ordersDelta = firstHalf.length > 0 ? ((secondHalf.length - firstHalf.length) / firstHalf.length) * 100 : 0;
-
-    return { totalSales, totalOrders, avgOrderValue, uniqueHoReCas, revenueDelta, ordersDelta, aovDelta };
-  }, [myOrders, totalSales, totalOrders, avgOrderValue]);
-
-  // Today's route (only for field reps)
-  const isFieldRep = currentUser.role === UserRole.FIELD_REP;
-  const todaysRoutes = useMemo(() => isFieldRep ? getTodaysScheduledVisits(routes, currentUser.id) : [], [routes, currentUser.id, isFieldRep]);
+  // ── Today's route (field reps) ───────────────────────────────────────────
+  const todaysRoutes = useMemo(
+    () => (isFieldRep ? getTodaysScheduledVisits(routes, currentUser.id) : []),
+    [routes, currentUser.id, isFieldRep],
+  );
   const todayRoute = todaysRoutes[0] ?? null;
 
-  const todayStopsWithContext = useMemo(() => {
+  const todayStops = useMemo(() => {
     if (!todayRoute) return [];
     return todayRoute.stops.map(stop => {
       const hoReCa = hoReCas.find(c => c.id === stop.hoReCaId);
       const outstanding = hoReCa ? getHoReCaOutstanding(hoReCa.id, hoReCa.name, invoices) : null;
-      const insights = hoReCa ? computeAllHoReCaInsights(orders, [hoReCa]) : [];
-      const insight = insights[0] ?? null;
+      const insight = hoReCa ? computeAllHoReCaInsights(orders, [hoReCa])[0] ?? null : null;
       return { ...stop, hoReCa, outstanding, insight };
     });
   }, [todayRoute, hoReCas, invoices, orders]);
@@ -119,153 +136,125 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
   const completedStops = todayRoute ? todayRoute.stops.filter(s => s.status === 'arrived').length : 0;
   const totalStops = todayRoute ? todayRoute.stops.length : 0;
 
-  // Target gap
-  const targetGap = useMemo(() => {
-    const revenueTarget = salesTargets.find(t => t.userId === currentUser.id && t.type === 'revenue');
-    if (!revenueTarget) return null;
-
-    const achieved = computeTargetAchieved({ ...revenueTarget, userId: currentUser.id }, metricCtx);
-
-    const remaining = Math.max(revenueTarget.targetValue - achieved, 0);
-    const projection = computeTargetProjection(revenueTarget, myOrders, currentUser.id);
-
-    return { target: revenueTarget, achieved, remaining, projection };
-  }, [salesTargets, currentUser.id, myOrders]);
-
-  // Sales targets progress
+  // ── Targets ──────────────────────────────────────────────────────────────
   const myTargets = salesTargets.filter(t => t.userId === currentUser.id);
+  const revenueGap = useMemo(() => {
+    const revenueTarget = myTargets.find(t => t.type === 'revenue');
+    if (!revenueTarget) return null;
+    const achieved = computeTargetAchieved({ ...revenueTarget, userId: currentUser.id }, metricCtx);
+    return Math.max(revenueTarget.targetValue - achieved, 0);
+  }, [myTargets, currentUser.id, metricCtx]);
 
-  // Visit completion rate (30d)
-  const visitCompletion = useMemo(() => {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
-    return getVisitCompletionRate(visits, routes, currentUser.id, thirtyDaysAgo, new Date());
-  }, [visits, routes, currentUser.id]);
-
-  // Action items
-  const reorderPredictions = useMemo(() => {
-    return getReorderPredictions(orders, hoReCas).filter(p => p.daysUntil <= 7 && p.daysUntil >= -3);
-  }, [orders, hoReCas]);
-
-  const atRiskCustomers = useMemo(() => {
-    return getAtRiskCustomersForRep(orders, hoReCas, currentUser.id);
-  }, [orders, hoReCas, currentUser.id]);
-
-  const lowStockProducts = useMemo(() => {
-    // Products the rep frequently sells that are low/out of stock
-    const repProductIds = new Set<number>();
-    myOrders.forEach(o => o.items.forEach(item => repProductIds.add(item.id)));
-    return products.filter(p =>
-      repProductIds.has(p.id)
-      && classifyStock(p.available, lowStockThresholdFor(p, globalThreshold)) !== 'in_stock',
-    );
-  }, [myOrders, products, globalThreshold]);
+  // ── Needs attention ──────────────────────────────────────────────────────
+  const handleCheckIn = useCallback((hoReCaId: number) => setVisitHoReCaId(hoReCaId), []);
+  const canCheckIn = Boolean(setVisits);
 
   const actionColumns = useMemo((): ActionItemColumn[] => {
-    const reorderItems: ActionItem[] = reorderPredictions.map(p => ({
-      id: `reorder-${p.hoReCaId}`,
-      title: p.hoReCaName,
-      badge: p.segment ? {
-        label: p.segment === 'high_value' ? 'High Value' : p.segment === 'growing' ? 'Growing' : p.segment,
-        color: p.segment === 'high_value' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-               p.segment === 'growing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-               'bg-stone-50 text-stone-700 border-stone-200',
-      } : undefined,
-      actions: [{
-        label: 'Order',
-        icon: ArrowRight,
+    const reorderItems: ActionItem[] = getReorderPredictions(orders, hoReCas)
+      .filter(p => p.daysUntil <= 7 && p.daysUntil >= -3)
+      .map(p => ({
+        id: `reorder-${p.hoReCaId}`,
+        title: p.hoReCaName,
+        subtitle: p.daysUntil < 0 ? `Reorder ${-p.daysUntil}d overdue` : p.daysUntil === 0 ? 'Reorder due today' : `Reorder due in ${p.daysUntil}d`,
         onClick: () => onStartOrder(p.hoReCaId),
-      }],
-    }));
+        actions: [{ label: 'Order', icon: ArrowRight, onClick: () => onStartOrder(p.hoReCaId) }],
+      }));
 
-    const riskItems: ActionItem[] = atRiskCustomers.map(c => ({
+    const riskItems: ActionItem[] = getAtRiskCustomersForRep(orders, hoReCas, currentUser.id).map(c => ({
       id: `risk-${c.hoReCaId}`,
       title: c.hoReCaName,
-      subtitle: `${c.daysSinceLastOrder}d ago`,
-      actions: [{
-        label: 'Visit',
-        icon: ArrowRight,
-        onClick: () => handleCheckIn(c.hoReCaId),
-      }],
+      subtitle: `Last order ${c.daysSinceLastOrder}d ago`,
+      onClick: canCheckIn ? () => handleCheckIn(c.hoReCaId) : undefined,
+      actions: canCheckIn ? [{ label: 'Visit', icon: ArrowRight, onClick: () => handleCheckIn(c.hoReCaId) }] : undefined,
     }));
 
-    const stockItems: ActionItem[] = lowStockProducts.map(p => ({
-      id: `stock-${p.id}`,
-      title: p.name,
-      subtitle: p.available <= 0 ? 'Out of stock' : `${p.available} left`,
-      badge: p.available <= 0 ? { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' } : undefined,
-    }));
+    // Products this rep sells that are low or out — global stock, not a site.
+    const soldIds = new Set<number>();
+    myOrders.forEach(o => o.items.forEach(item => soldIds.add(item.id)));
+    const toStock = nav('stock');
+    const stockItems: ActionItem[] = products
+      .filter(p => soldIds.has(p.id) && classifyStock(p.available, lowStockThresholdFor(p, globalThreshold)) !== 'in_stock')
+      .map(p => ({
+        id: `stock-${p.id}`,
+        title: p.name,
+        subtitle: p.available <= 0 ? 'Out of stock' : `${formatCount(p.available)} left`,
+        badge: p.available <= 0 ? { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' } : undefined,
+        onClick: toStock,
+      }));
 
     return [
-      { id: 'reorder', label: 'Reorder Due', icon: Clock, severity: 'info' as const, items: reorderItems },
-      { id: 'at-risk', label: 'At-Risk', icon: AlertCircle, severity: 'warning' as const, items: riskItems },
-      { id: 'low-stock', label: 'Low Stock', icon: Package, severity: 'warning' as const, items: stockItems },
+      { id: 'reorder', label: 'Reorder due', icon: Clock, severity: 'info' as const, items: reorderItems },
+      { id: 'at-risk', label: 'At-risk customers', icon: AlertCircle, severity: 'warning' as const, items: riskItems },
+      { id: 'low-stock', label: 'Low stock', icon: Package, severity: 'warning' as const, items: stockItems, onViewAll: toStock },
     ];
-  }, [reorderPredictions, atRiskCustomers, lowStockProducts, onStartOrder]);
+  }, [orders, hoReCas, currentUser.id, myOrders, products, globalThreshold, nav, onStartOrder, canCheckIn, handleCheckIn]);
 
-  // Sales trend chart data (last 30 days). The registry groups the revenue; the
-  // gap-filling loop stays because only this component knows the axis it draws.
-  const thirtyDaysAgo = useMemo(() => new Date(Date.now() - 30 * 86400000), []);
-  const recentRevenueByDate = useMetric<readonly DateRevenue[]>(
-    'sales.revenueByDate', metricCtx, { ...mineFilter, from: thirtyDaysAgo },
+  // ── Trend and rankings, all for the chosen period ────────────────────────
+  const revenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, periodFilter);
+  const prevRevenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, previousFilter);
+  const trend = useMemo(() => dailySeries(revenueByDate, dateRange.from, dateRange.to), [revenueByDate, dateRange]);
+  const prevTrend = useMemo(
+    () => dailySeries(prevRevenueByDate, dateRange.previous.from, dateRange.previous.to),
+    [prevRevenueByDate, dateRange],
   );
-  const salesChartData = useMemo(() => {
-    const salesByDate = new Map(recentRevenueByDate.map(row => [row.date, row.revenue]));
 
-    const data: { date: string; revenue: number }[] = [];
-    const d = new Date(thirtyDaysAgo);
-    const now = new Date();
-    while (d <= now) {
-      const dateStr = d.toISOString().split('T')[0];
-      data.push({ date: dateStr, revenue: salesByDate.get(dateStr) || 0 });
-      d.setDate(d.getDate() + 1);
-    }
-    return data;
-  }, [recentRevenueByDate, thirtyDaysAgo]);
+  const revenueByCustomer = useMetric<readonly CustomerRevenue[]>('sales.revenueByCustomer', metricCtx, periodFilter);
+  const unitsByProduct = useMetric<readonly ProductUnits[]>('sales.unitsByProduct', metricCtx, periodFilter);
 
-  // Top customers & products
-  const myRevenueByCustomer = useMetric<readonly CustomerRevenue[]>('sales.revenueByCustomer', metricCtx, mineFilter);
-  const myUnitsByProduct = useMetric<readonly ProductUnits[]>('sales.unitsByProduct', metricCtx, mineFilter);
-  const { topCustomers, topProducts } = useMemo(() => {
-    const topC = myRevenueByCustomer.slice(0, 5)
-      .map(row => ({ label: row.name, value: row.revenue, formattedValue: `$${row.revenue.toFixed(0)}` }));
-    const topP = myUnitsByProduct.slice(0, 5)
-      .map(row => ({ label: row.name, value: row.units, formattedValue: `${row.units} units` }));
+  const topCustomers = useMemo((): RankedItem[] => {
+    const rows = revenueByCustomer.slice(0, TOP_N);
+    const max = rows[0]?.revenue ?? 0;
+    return rows.map(row => ({
+      id: row.horecaId,
+      label: row.name,
+      value: formatMoney(row.revenue, { cents: false }),
+      share: max > 0 ? row.revenue / max : 0,
+      onClick: () => onStartOrder(row.horecaId),
+    }));
+  }, [revenueByCustomer, onStartOrder]);
 
-    return { topCustomers: topC, topProducts: topP };
-  }, [myOrders]);
+  const toStockTab = nav('stock');
+  const topProducts = useMemo((): RankedItem[] => {
+    const rows = unitsByProduct.slice(0, TOP_N);
+    const max = rows[0]?.units ?? 0;
+    return rows.map(row => ({
+      id: row.name,
+      label: row.name,
+      value: `${formatCount(row.units)} units`,
+      share: max > 0 ? row.units / max : 0,
+      onClick: toStockTab,
+    }));
+  }, [unitsByProduct, toStockTab]);
 
-  const greetingTime = new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening';
-
-  const handleCheckIn = (hoReCaId: number) => {
-    setVisitHoReCaId(hoReCaId);
-    setShowVisitModal(true);
-  };
+  const hour = new Date().getHours();
+  const greetingTime = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  const toOrders = nav('orders');
+  const toVisits = nav('scheduled_visits');
+  const toAccounts = nav('accounts');
 
   return (
     <PageFrame>
-      {/* A. Morning Header + Quick Stats */}
       <PageHeader
         visibleOnMobile
         title={`Good ${greetingTime}, ${currentUser.name.split(' ')[0]}`}
         description={new Date().toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric' })}
-        actions={todayRoute || (targetGap && targetGap.remaining > 0) ? <>
+        actions={todayRoute || (revenueGap !== null && revenueGap > 0) ? <>
           {todayRoute && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-nexgen-blue/10 text-nexgen-blue text-xs font-semibold">
-              <MapPin className="w-3.5 h-3.5" />
-              {totalStops} visits today
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700">
+              <MapPin className="w-3.5 h-3.5 text-stone-400" aria-hidden="true" />
+              {totalStops} {totalStops === 1 ? 'visit' : 'visits'} today
             </span>
           )}
-          {targetGap && targetGap.remaining > 0 && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
-              <Target className="w-3.5 h-3.5" />
-              ${targetGap.remaining.toLocaleString('en-AU', { maximumFractionDigits: 0 })} to go
+          {revenueGap !== null && revenueGap > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+              <Target className="w-3.5 h-3.5" aria-hidden="true" />
+              {formatMoney(revenueGap, { cents: false })} to go
             </span>
           )}
         </> : undefined}
       />
 
-      {/* Kitchen QR orders waiting on this rep (RLS limits the list to assigned venues).
-          Renders nothing when there are none. */}
+      {/* Kitchen QR orders waiting on this rep (RLS limits the list to assigned venues). Renders nothing when there are none. */}
       {PendingQrRequests && (
         <ErrorBoundary label="Orders awaiting approval">
           <Suspense fallback={null}>
@@ -274,214 +263,183 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         </ErrorBoundary>
       )}
 
-      {/* B. Today's ScheduledVisit Card (HERO) */}
-      {todayRoute ? (
-        <div className="glass-card rounded-xl overflow-hidden">
-          <div className="p-4 sm:p-5 border-b border-stone-200/50">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-nexgen-blue" />
-                <h2 className="text-sm font-semibold text-stone-900">{todayRoute.name}</h2>
-              </div>
-              <span className="text-xs text-stone-500">{completedStops}/{totalStops} completed</span>
-            </div>
-            <div className="w-full bg-stone-200 rounded-full h-2">
-              <div className="h-2 rounded-full bg-nexgen-blue transition-all" style={{ width: `${totalStops > 0 ? (completedStops / totalStops) * 100 : 0}%` }} />
-            </div>
-            {todayRoute.status === 'planned' && onStartRoute && (
-              <button
-                onClick={() => onStartRoute(todayRoute)}
-                className="w-full flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg bg-nexgen-blue text-white text-sm font-semibold hover:bg-nexgen-blue-dark btn-press cursor-pointer min-h-[44px]"
-              >
-                <Play className="w-4 h-4" /> Start Scheduled Visit
-              </button>
-            )}
-            {todayRoute.status === 'in_progress' && onViewRoute && (
-              <button
-                onClick={() => onViewRoute(todayRoute.id)}
-                className="w-full flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 btn-press cursor-pointer min-h-[44px]"
-              >
-                <ArrowRight className="w-4 h-4" /> Continue Scheduled Visit
-              </button>
-            )}
-          </div>
-
-          <div className="flex overflow-x-auto gap-3 p-4 sm:p-5 snap-x snap-mandatory">
-            {todayStopsWithContext.map((stop, idx) => (
-              <div key={stop.hoReCaId}
-                className={`flex-shrink-0 w-[280px] sm:w-[300px] rounded-lg border transition-all snap-start ${
-                  stop.status === 'arrived' ? 'bg-emerald-50 border-emerald-200' :
-                  stop.status === 'skipped' ? 'bg-stone-50 border-stone-200 opacity-50' :
-                  'bg-stone-50 border-stone-200 hover:border-nexgen-blue/30 hover:shadow-sm'
-                }`}
-              >
-                <div className="p-3.5">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-stone-900 truncate">{stop.hoReCa?.name ?? 'Unknown'}</p>
-                      <p className="text-xs text-stone-500 truncate mt-0.5">{stop.hoReCa?.address ?? ''}</p>
-                    </div>
-                    <span className="text-xs font-mono text-stone-500 ml-2">#{idx + 1}</span>
-                  </div>
-
-                  {stop.insight && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <SegmentBadge segment={stop.insight.segment} />
-                      {stop.insight.daysSinceLastOrder !== null && (
-                        <span className="text-xs text-stone-500">
-                          {stop.insight.daysSinceLastOrder}d since last order
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {stop.outstanding && stop.outstanding.totalOutstanding > 0 && (
-                    <div className={`text-xs px-2 py-1 rounded mb-2 ${stop.outstanding.isBlocked ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
-                      ${stop.outstanding.totalOutstanding.toFixed(2)} outstanding
-                      {stop.outstanding.isBlocked && ' (Blocked)'}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 mt-3">
-                    {stop.status !== 'arrived' && stop.status !== 'skipped' && (
-                      <>
-                        <button onClick={() => handleCheckIn(stop.hoReCaId)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-nexgen-blue/10 text-nexgen-blue text-xs font-semibold hover:bg-nexgen-blue/20 cursor-pointer min-h-[44px]">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Check In
-                        </button>
-                        <button onClick={() => onStartOrder(stop.hoReCaId)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 cursor-pointer min-h-[44px]">
-                          <ShoppingBag className="w-3.5 h-3.5" /> Order
-                        </button>
-                      </>
-                    )}
-                    {stop.status === 'arrived' && (
-                      <span className="flex items-center gap-1.5 text-emerald-600 text-xs font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Visited
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Expandable customer context */}
-                  {expandedStop === stop.hoReCaId && stop.insight && (
-                    <div className="mt-3 pt-3 border-t border-stone-200 space-y-2">
-                      <div className="text-xs text-stone-600">
-                        <span className="text-stone-500">Avg Order:</span> ${stop.insight.avgOrderValue.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-stone-600">
-                        <span className="text-stone-500">Total Spend:</span> ${stop.insight.totalSpend.toFixed(2)}
-                      </div>
-                      {stop.insight.predictedNextOrderDate && (
-                        <div className="text-xs text-stone-600">
-                          <span className="text-stone-500">Next Order:</span> {new Date(stop.insight.predictedNextOrderDate).toLocaleDateString()}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => setExpandedStop(expandedStop === stop.hoReCaId ? null : stop.hoReCaId)}
-                  className="w-full text-xs text-stone-500 hover:text-stone-600 py-2 border-t border-stone-200 cursor-pointer text-center"
-                >
-                  {expandedStop === stop.hoReCaId ? 'Less' : 'More details'}
+      {isFieldRep && (
+        todayRoute ? (
+          <DashCard
+            title={todayRoute.name}
+            caption={`${completedStops} of ${totalStops} visited`}
+            flush
+            footer={
+              todayRoute.status === 'planned' && onStartRoute ? (
+                <button type="button" onClick={() => onStartRoute(todayRoute)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-nexgen-blue-dark px-4 py-2.5 text-sm font-semibold text-white hover:bg-nexgen-blue-dark/90 cursor-pointer touch-target">
+                  <Play className="w-4 h-4" aria-hidden="true" /> Start today's visits
                 </button>
+              ) : todayRoute.status === 'in_progress' && onViewRoute ? (
+                <button type="button" onClick={() => onViewRoute(todayRoute.id)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-nexgen-blue-dark px-4 py-2.5 text-sm font-semibold text-white hover:bg-nexgen-blue-dark/90 cursor-pointer touch-target">
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" /> Continue today's visits
+                </button>
+              ) : undefined
+            }
+          >
+            <div className="px-4 sm:px-5">
+              <div role="progressbar" aria-label="Visits completed" aria-valuemin={0} aria-valuemax={totalStops} aria-valuenow={completedStops}
+                className="h-1.5 w-full overflow-hidden rounded-full bg-stone-100">
+                <div className="h-full rounded-full bg-nexgen-blue transition-[width] duration-500" style={{ width: `${totalStops > 0 ? (completedStops / totalStops) * 100 : 0}%` }} />
               </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="glass-card rounded-xl p-5 text-center">
-          <MapPin className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-          <p className="text-sm text-stone-600 mb-3">No scheduled visit planned for today</p>
-          <p className="text-xs text-stone-500">Head to Scheduled Visits to plan your day</p>
-        </div>
-      )}
-
-      {/* C. Target Progress (compact) */}
-      {myTargets.length > 0 && (
-        <div className="glass-card rounded-xl p-4 sm:p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-stone-900 flex items-center gap-2">
-              <Target className="w-4 h-4 text-nexgen-blue" /> Targets
-            </h3>
-            <button onClick={() => setShowTargetModal(true)}
-              className="text-xs text-nexgen-blue hover:text-nexgen-blue-dark cursor-pointer">Edit</button>
-          </div>
-          <div className="space-y-3">
-            {myTargets.map(target => {
-              const { achieved, percent: pct } = computeTargetProgress(
-                { ...target, userId: currentUser.id },
-                metricCtx,
-              );
-              const labels = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
-              const fmtA = target.type === 'revenue' ? `$${achieved.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(achieved);
-              const fmtT = target.type === 'revenue' ? `$${target.targetValue.toLocaleString()}` : String(target.targetValue);
-              const barColor = pct >= 60 ? 'bg-emerald-500' : pct >= 30 ? 'bg-amber-500' : 'bg-red-500';
-
-              const projection = computeTargetProjection(target, myOrders, currentUser.id);
-              const daysLeft = projection?.daysRemaining ?? 0;
-              const dailyNeeded = daysLeft > 0 && target.type === 'revenue'
-                ? (target.targetValue - achieved) / daysLeft
-                : 0;
-
-              return (
-                <div key={target.id}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-stone-700">{labels[target.type]}</span>
-                    <span className="text-xs text-stone-500">{fmtA} / {fmtT}</span>
-                  </div>
-                  <div className="w-full bg-stone-200 rounded-full h-1.5">
-                    <div className={`h-1.5 rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="flex justify-between mt-0.5">
-                    {dailyNeeded > 0 && (
-                      <span className="text-xs text-stone-500">
-                        Need ${dailyNeeded.toFixed(0)}/day for {daysLeft}d
-                      </span>
+            </div>
+            <ol className="flex gap-3 overflow-x-auto snap-x snap-mandatory px-4 sm:px-5 py-4">
+              {todayStops.map((stop, idx) => {
+                const done = stop.status === 'arrived';
+                const skipped = stop.status === 'skipped';
+                return (
+                  <li key={stop.hoReCaId}
+                    className={`snap-start shrink-0 w-[272px] rounded-lg border p-3.5 ${done ? 'border-emerald-200 bg-emerald-50/60' : skipped ? 'border-stone-200 bg-stone-50 opacity-60' : 'border-stone-200 bg-white'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-stone-900">{stop.hoReCa?.name ?? 'Unknown customer'}</p>
+                        <p className="truncate text-xs text-stone-500">{stop.hoReCa?.address ?? ''}</p>
+                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-stone-500">#{idx + 1}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-600">
+                      {stop.insight && <SegmentBadge segment={stop.insight.segment} />}
+                      {stop.insight?.daysSinceLastOrder != null && <span>Last order {stop.insight.daysSinceLastOrder}d ago</span>}
+                      {stop.insight && <span>· Avg {formatMoney(stop.insight.avgOrderValue, { cents: false })}</span>}
+                    </div>
+                    {stop.outstanding && stop.outstanding.totalOutstanding > 0 && (
+                      toAccounts ? (
+                        <button type="button" onClick={toAccounts}
+                          className={`mt-2 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold cursor-pointer ${stop.outstanding.isBlocked ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+                          {formatMoney(stop.outstanding.totalOutstanding)} owed{stop.outstanding.isBlocked ? ' · Blocked' : ''}
+                          <ArrowRight className="w-3 h-3" aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <span className={`mt-2 inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${stop.outstanding.isBlocked ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+                          {formatMoney(stop.outstanding.totalOutstanding)} owed{stop.outstanding.isBlocked ? ' · Blocked' : ''}
+                        </span>
+                      )
                     )}
-                    <span className={`text-xs font-semibold ml-auto ${pct >= 60 ? 'text-emerald-600' : pct >= 30 ? 'text-amber-600' : 'text-red-600'}`}>
-                      {pct.toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      {done ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> Visited
+                        </span>
+                      ) : !skipped && (
+                        <>
+                          {canCheckIn && (
+                            <button type="button" onClick={() => handleCheckIn(stop.hoReCaId)}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-800 hover:bg-stone-50 cursor-pointer touch-target">
+                              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> Check in
+                            </button>
+                          )}
+                          <button type="button" onClick={() => onStartOrder(stop.hoReCaId)}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-nexgen-blue-light px-3 py-2 text-xs font-semibold text-nexgen-blue-dark hover:bg-nexgen-blue/15 cursor-pointer touch-target">
+                            <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" /> Order
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </DashCard>
+        ) : (
+          <DashCard title="Today's visits">
+            <EmptyState
+              icon={MapPin}
+              message="No visits planned for today"
+              action={toVisits ? { label: 'Plan visits', onClick: toVisits } : undefined}
+            />
+          </DashCard>
+        )
       )}
 
-      {/* D. Action Items */}
       <ActionItemsBoard
-        title="Action Items"
+        title="Needs attention"
         columns={actionColumns}
         storageKey="rep_action_items"
         showAssign={false}
       />
 
-      {/* E. Performance Snapshot (KPI Cards) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <KPICard icon={DollarSign} label="Revenue" value={`$${metrics.totalSales.toFixed(2)}`} delta={metrics.revenueDelta} />
-        <KPICard icon={ShoppingBag} label="Orders" value={String(metrics.totalOrders)} delta={metrics.ordersDelta} />
-        <KPICard icon={BarChart3} label="Avg Order Value" value={`$${metrics.avgOrderValue.toFixed(2)}`} delta={metrics.aovDelta} />
-        <KPICard icon={UserCheck} label="Visit Completion" value={`${visitCompletion.rate}%`}
-          subtitle={`${visitCompletion.completed}/${visitCompletion.planned} visits`} />
-      </div>
+      {myTargets.length > 0 && (
+        <DashCard
+          title="Targets"
+          action={onUpdateSalesTargets ? { label: 'Edit', onClick: () => setShowTargetModal(true) } : undefined}
+        >
+          <div className="space-y-4">
+            {myTargets.map(target => {
+              const { achieved, percent } = computeTargetProgress({ ...target, userId: currentUser.id }, metricCtx);
+              const isMoney = target.type === 'revenue';
+              const fmt = (n: number) => (isMoney ? formatMoney(n, { cents: false }) : formatCount(n));
+              const projection = computeTargetProjection(target, myOrders, currentUser.id);
+              const daysLeft = projection?.daysRemaining ?? 0;
+              const dailyNeeded = daysLeft > 0 && isMoney ? Math.max(target.targetValue - achieved, 0) / daysLeft : 0;
+              return (
+                <React.Fragment key={target.id}>
+                  <TargetBar
+                    label={TARGET_LABELS[target.type]}
+                    achieved={fmt(achieved)}
+                    target={fmt(target.targetValue)}
+                    percent={percent}
+                    startDate={target.startDate}
+                    endDate={target.endDate}
+                    hint={dailyNeeded > 0 ? `Need ${formatMoney(dailyNeeded, { cents: false })}/day for ${daysLeft}d` : undefined}
+                  />
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </DashCard>
+      )}
 
-      {/* F. Detailed Analytics (collapsible) */}
-      <ExpandableSection title="Revenue Trend (30 days)">
-        <SalesLineChart data={salesChartData} />
-      </ExpandableSection>
+      <Band
+        label="Key numbers"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <TimePeriodToggle value={period} onChange={setPeriod} />
+            {period === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input type="date" aria-label="From" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
+                <span className="text-stone-500 text-xs">to</span>
+                <input type="date" aria-label="To" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                  className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
+              </div>
+            )}
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <KPICard label="Revenue" value={formatMoney(revenue)} delta={pctDelta(revenue, prevRevenue)} onClick={toOrders} />
+          <KPICard label="Orders" value={formatCount(orderCount)} delta={pctDelta(orderCount, prevOrderCount)} onClick={toOrders} />
+          <KPICard label="Avg order value" value={formatMoney(aov)} delta={pctDelta(aov, prevAov)} onClick={toOrders} />
+          <KPICard
+            label="Visit completion"
+            value={`${visitCompletion.rate}%`}
+            delta={visitCompletion.planned > 0 || prevVisitCompletion.planned > 0 ? visitCompletion.rate - prevVisitCompletion.rate : undefined}
+            deltaSuffix=" pts"
+            subtitle={`${visitCompletion.completed} of ${visitCompletion.planned} visits`}
+            onClick={toVisits}
+          />
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ExpandableSection title="Top Customers">
-          <HorizontalBarChart title="" data={topCustomers} />
-        </ExpandableSection>
-        <ExpandableSection title="Top Products">
-          <HorizontalBarChart title="" data={topProducts} />
-        </ExpandableSection>
-      </div>
+        <DashCard title="Sales trend" caption="Your revenue by day · dashed line is the previous period">
+          <SalesLineChart data={trend} previous={prevTrend} />
+        </DashCard>
 
-      {/* Modals */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <DashCard title="Top customers" caption="Your revenue this period · tap to start an order">
+            <RankedList label="Top customers" items={topCustomers} emptyMessage="No orders in this period" />
+          </DashCard>
+          <DashCard title="Top products" caption="Units this period" action={toStockTab ? { label: 'Stock', onClick: toStockTab } : undefined}>
+            <RankedList label="Top products" items={topProducts} emptyMessage="No sales in this period" />
+          </DashCard>
+        </div>
+      </Band>
+
       {showTargetModal && onUpdateSalesTargets && (
         <SalesTargetModal
           isOpen={showTargetModal}
@@ -492,17 +450,16 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         />
       )}
 
-      {showVisitModal && visitHoReCaId !== null && setVisits && (
+      {visitHoReCaId !== null && setVisits && (
         <VisitModal
           hoReCaId={visitHoReCaId}
           userId={currentUser.id}
           hoReCas={hoReCas}
           onSave={(visit) => {
             setVisits([...visits, visit]);
-            setShowVisitModal(false);
             setVisitHoReCaId(null);
           }}
-          onClose={() => { setShowVisitModal(false); setVisitHoReCaId(null); }}
+          onClose={() => setVisitHoReCaId(null)}
         />
       )}
     </PageFrame>
