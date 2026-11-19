@@ -71,7 +71,7 @@ describe('RepDashboard walk fixes', () => {
   it('hides Visit completion from an Office Rep', async () => {
     renderRep({ currentUser: officeRep })
     await screen.findByText('Revenue')
-    expect(screen.queryByText('Visit completion')).toBeNull()
+    expect(screen.queryByText(/visit completion/i)).toBeNull()
   })
 
   it('shows no visit change when nothing was planned', async () => {
