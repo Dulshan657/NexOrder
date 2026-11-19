@@ -180,6 +180,7 @@ import {
     PackageOpen,
     ArrowDownToLine,
     Boxes,
+    PackageSearch,
     ClipboardCheck,
     ClipboardList,
     Send,
@@ -1157,6 +1158,13 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 Off-home
                             </SidebarNavItem>
                             <SidebarNavItem
+                                icon={PackageSearch}
+                                active={adminView === 'Where is it'}
+                                onClick={() => { setAdminView('Where is it'); setIsSidebarOpen(false); }}
+                            >
+                                Where is it?
+                            </SidebarNavItem>
+                            <SidebarNavItem
                                 icon={ClipboardList}
                                 active={adminView === 'Stocktake'}
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
@@ -1293,6 +1301,13 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
                             >
                                 Off-home
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={PackageSearch}
+                                active={adminView === 'Where is it'}
+                                onClick={() => { setAdminView('Where is it'); setIsSidebarOpen(false); }}
+                            >
+                                Where is it?
                             </SidebarNavItem>
                             <SidebarNavItem
                                 icon={ClipboardList}
@@ -1589,6 +1604,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                             setInitialRouteId(scheduledVisitId);
                                             setView('scheduled_visits');
                                         }}
+                                        onNavigate={nextView => setView(nextView)}
                                     />
                                     </Suspense>
                                     </ErrorBoundary>

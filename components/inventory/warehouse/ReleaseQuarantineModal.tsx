@@ -150,7 +150,7 @@ export function ReleaseQuarantineModal({ open, onClose, from, contents, destinat
             flash={flash}
             listId="release-destinations"
             placeholder="Scan or type a location code"
-            cameraTitle="Scan the destination bin"
+            cameraTitle="Scan the destination location"
             error={
               destinationCode.trim() !== '' && !destination
                 ? 'No location here with that code.'

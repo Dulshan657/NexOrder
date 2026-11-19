@@ -18,20 +18,20 @@ export const COPY = {
   assignQueueEmpty: 'Nothing to put away',
   confirmHeading: (bin: string) => `Home full — put in ${bin}?`,
   confirmScanLabel: (bin: string) => `Scan ${bin} to confirm`,
-  confirmHelper: 'Scanning this bin confirms it. The desk can choose another bin instead.',
+  confirmHelper: 'Scanning this location confirms it. The desk can choose another location instead.',
   confirmWrongBin: (bin: string) =>
-    `Scan ${bin} to confirm this overflow bin, or leave it for the desk to choose another.`,
+    `Scan ${bin} to confirm this overflow location, or leave it for the desk to choose another.`,
   confirmToast: (bin: string) => `Confirmed — put it in ${bin}`,
   alreadyDealtWith: 'This line was already dealt with (it is now assigned).',
-  offer: 'This product has no home bin. Give it one?',
-  giveHomeSheet: (sku: string) => `Give ${sku} a home bin`,
-  codeField: 'Scan or type the bin code',
-  pickField: 'Or pick a bin',
+  offer: 'This product has no home location. Give it one?',
+  giveHomeSheet: (sku: string) => `Give ${sku} a home location`,
+  codeField: 'Scan or type the location code',
+  pickField: 'Or pick a location',
   makeHome: 'Make this its home',
-  notOffered: (code: string) => `${code} can't be this product's home. Pick one of the bins listed.`,
-  homeScanLabel: (bin: string) => `Scan ${bin} — it becomes the home bin`,
-  placedAndSet: (bin: string, sku: string) => `Placed in ${bin} — it is now ${sku}'s home bin`,
-  forbidden: 'Only a Manager or Admin can give a product a home bin.',
+  notOffered: (code: string) => `${code} can't be this product's home. Pick one of the locations listed.`,
+  homeScanLabel: (bin: string) => `Scan ${bin} — it becomes the home location`,
+  placedAndSet: (bin: string, sku: string) => `Placed in ${bin} — it is now ${sku}'s home location`,
+  forbidden: 'Only a Manager or Admin can give a product a home location.',
 } as const
 
 export type StageName = 'Assign' | 'Walk'
@@ -65,7 +65,7 @@ export async function openPutawayStage(page: Page, world: WalkWorld, stage: Stag
 /** The Assign queue's row for `product`: present only if that line waits for the desk. */
 export function queueRow(page: Page, product: WorldProduct): Locator {
   return page.locator('div.px-4.py-3', {
-    has: page.getByRole('button', { name: `Why this bin for ${product.name}?` }),
+    has: page.getByRole('button', { name: `Why this location for ${product.name}?` }),
   })
 }
 

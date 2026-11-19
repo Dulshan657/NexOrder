@@ -694,6 +694,11 @@ export interface PickRouteStop {
     orderId: string | null;
     qtyBase: number;
     legDistanceM: number;
+    /** A readable label for the place (NX-0039): "Rack 7 · Level 2". Absent from order routes. */
+    place?: string | null;
+    /** The walk to this stop, as corner grid cells (NX-0037). Optional both
+     *  ways: an older function omits it and the client draws a straight leg. */
+    path?: { floor: number; x: number; y: number }[];
 }
 
 export interface PickRoute {

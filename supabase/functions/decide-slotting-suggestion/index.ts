@@ -101,7 +101,7 @@ serve(async (req: Request) => {
     const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: toLoc })
     if (binErr || !binRow || !(binRow as any).is_active || rootErr || root !== warehouseId) {
       await releaseClaim()
-      throw new EdgeFunctionError('CONFLICT', 'Destination bin is no longer valid for this warehouse — re-run re-optimize')
+      throw new EdgeFunctionError('CONFLICT', 'Destination location is no longer valid for this warehouse — re-run re-optimize')
     }
 
     // Move AVAILABLE stock from the current bin to the suggested bin. On failure

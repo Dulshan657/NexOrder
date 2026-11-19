@@ -65,12 +65,12 @@ serve(async (req: Request) => {
       .rpc('inv_root_warehouse', { p_location_id: input.from_location_id })
     if (rootErr) throw new EdgeFunctionError('INTERNAL', rootErr.message)
     if (rootRow !== (task as any).warehouse_id) {
-      throw new EdgeFunctionError('CONFLICT', 'That source bin is in a different warehouse')
+      throw new EdgeFunctionError('CONFLICT', 'That source location is in a different warehouse')
     }
 
     const { data: fromLoc } = await admin
       .from('locations').select('id, code, is_active').eq('id', input.from_location_id).maybeSingle()
-    if (!fromLoc) throw new EdgeFunctionError('NOT_FOUND', 'That source bin does not exist')
+    if (!fromLoc) throw new EdgeFunctionError('NOT_FOUND', 'That source location does not exist')
     if (!(fromLoc as any).is_active) {
       throw new EdgeFunctionError('CONFLICT', `${(fromLoc as any).code} is no longer active`)
     }

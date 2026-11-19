@@ -83,14 +83,14 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
     const candidates: ScanMatch[] = result.kind === 'ambiguous' ? result.candidates : [result]
     const locationMatch = candidates.find((c) => c.kind === 'location')
     if (!locationMatch || locationMatch.kind !== 'location') {
-      setNote('That code names a product or a pallet. Scan a bin label instead.')
+      setNote('That code names a product or a pallet. Scan a location label instead.')
       signalFlash('reject')
       return
     }
 
     const target = locations.find((l) => l.id === locationMatch.location.id)
     if (!target) {
-      setNote('That bin is not in the warehouse you have selected.')
+      setNote('That location is not in the warehouse you have selected.')
       signalFlash('reject')
       return
     }
@@ -102,7 +102,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
     if (!isCountableLocation(target)) {
       setNote(
         `${target.code} is a ${target.kind} — a container, not a place stock sits. ` +
-        'Scan one of the bins or levels inside it.',
+        'Scan one of the locations or levels inside it.',
       )
       signalFlash('reject')
       return
@@ -122,13 +122,13 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
   return (
     <div className="space-y-4">
       <ScanField
-        label="Scan a bin label"
+        label="Scan a location label"
         value={code}
         onChange={(v) => { setCode(v); if (note) setNote(null) }}
         onScan={handleScan}
         flash={flash}
-        placeholder="A bin code, or type to search"
-        cameraTitle="Scan the bin you are counting"
+        placeholder="A location code, or type to search"
+        cameraTitle="Scan the location you are counting"
         autoFocus
       />
 

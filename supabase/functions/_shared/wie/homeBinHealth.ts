@@ -244,43 +244,43 @@ export function homeBinProblems(f: HomeBinFacts): HomeBinProblem[] {
   }
   const bin = f.binCode
 
-  if (!f.isActive) add('inactive', `Bin ${bin} is inactive, so putaway never offers it.`)
-  if (f.isHold) add('hold_zone', `Bin ${bin} is in a hold zone, so ordinary stock is never put there.`)
+  if (!f.isActive) add('inactive', `Location ${bin} is inactive, so putaway never offers it.`)
+  if (f.isHold) add('hold_zone', `Location ${bin} is in a hold zone, so ordinary stock is never put there.`)
 
   // A bin with no level role is legacy and putaway accepts it (see the header).
   if (f.levelRole !== null) {
     if (!f.isPickZone) {
-      add('not_pick_level', `Bin ${bin} is on the ${f.levelRole} level, which is not a pick-zone level.`)
+      add('not_pick_level', `Location ${bin} is on the ${f.levelRole} level, which is not a pick-zone level.`)
     }
     if (!f.levelHuTypes.includes('carton')) {
-      add('carton_not_allowed', `Bin ${bin} is on the ${f.levelRole} level, which does not take cartons.`)
+      add('carton_not_allowed', `Location ${bin} is on the ${f.levelRole} level, which does not take cartons.`)
     }
     if (f.allowedLevelRoles.length > 0 && !f.allowedLevelRoles.includes(f.levelRole)) {
       add(
         'level_role_not_allowed',
-        `${f.sku} may only go on the ${f.allowedLevelRoles.join(' or ')} level, but bin ${bin} is on the ${f.levelRole} level.`,
+        `${f.sku} may only go on the ${f.allowedLevelRoles.join(' or ')} level, but location ${bin} is on the ${f.levelRole} level.`,
       )
     }
   }
 
-  if (!f.inActiveLayout) add('not_on_layout', `Bin ${bin} is not on the published warehouse layout.`)
-  if (!f.hasDockRoute) add('no_dock_route', `Bin ${bin} has no walking route from a dock.`)
+  if (!f.inActiveLayout) add('not_on_layout', `Location ${bin} is not on the published warehouse layout.`)
+  if (!f.hasDockRoute) add('no_dock_route', `Location ${bin} has no walking route from a dock.`)
 
   if (
     f.zoneAllowedCategories !== null && f.zoneAllowedCategories.length > 0 &&
     f.category !== null && !f.zoneAllowedCategories.includes(f.category)
   ) {
-    add('zone_category', `The zone around bin ${bin} does not accept ${f.category}.`)
+    add('zone_category', `The zone around location ${bin} does not accept ${f.category}.`)
   }
 
   if (f.slottingRefusal !== null) {
-    add('slotting_refused', `Slotting rules refuse bin ${bin} for ${f.sku}: ${f.slottingRefusal}`)
+    add('slotting_refused', `Slotting rules refuse location ${bin} for ${f.sku}: ${f.slottingRefusal}`)
   }
 
-  if (isFull(f)) add('full', `Bin ${bin} is full: it has no room left for ${f.sku}.`)
+  if (isFull(f)) add('full', `Location ${bin} is full: it has no room left for ${f.sku}.`)
 
   if (f.binWarehouseId !== f.warehouseId) {
-    add('other_warehouse', `Bin ${bin} is not in the warehouse this home is set for.`)
+    add('other_warehouse', `Location ${bin} is not in the warehouse this home is set for.`)
   }
 
   return out
@@ -296,7 +296,7 @@ export function homeBinProblems(f: HomeBinFacts): HomeBinProblem[] {
  */
 export function homeChoiceRefusal(f: HomeBinCandidateFacts): string | null {
   if (f.otherHomeSkus.length > 0) {
-    return `${f.binCode} is the home bin of ${f.otherHomeSkus[0]}; choose another bin.`
+    return `${f.binCode} is the home location of ${f.otherHomeSkus[0]}; choose another location.`
   }
   return homeBinProblems(f)[0]?.message ?? null
 }

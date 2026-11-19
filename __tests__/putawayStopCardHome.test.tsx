@@ -88,7 +88,7 @@ function open() {
 }
 
 function scanBin(code: string) {
-  const input = screen.getByLabelText(/Scan the bin/)
+  const input = screen.getByLabelText(/Scan the location/)
   fireEvent.change(input, { target: { value: code } })
   fireEvent.keyDown(input, { key: 'Enter' })
 }
@@ -105,9 +105,9 @@ describe('putaway walk card — a task sent to the product home', () => {
     scanBin(OTHER)
 
     const alert = screen.getByRole('alert')
-    expect(alert.textContent).toBe(`This product's home bin is ${HOME}. Scan ${HOME}.`)
+    expect(alert.textContent).toBe(`This product's home location is ${HOME}. Scan ${HOME}.`)
     // Still on the bin step: the scan field is there, the count step is not.
-    expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
+    expect(screen.getByLabelText(/Scan the location/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Confirm/i })).toBeNull()
     expect(screen.queryByText(/That's allowed/)).toBeNull()
     expect(completeMock).not.toHaveBeenCalled()
@@ -129,7 +129,7 @@ describe('putaway walk card — a task sent to the product home', () => {
   it('says it is the home bin instead of "a different bay is fine"', () => {
     mount()
     open()
-    expect(screen.getByText(/home bin\. It goes here while the home has room/)).toBeTruthy()
+    expect(screen.getByText(/home location\. It goes here while the home has room/)).toBeTruthy()
     expect(screen.queryByText(/A different bay is fine/)).toBeNull()
   })
 

@@ -50,7 +50,7 @@ export function PickRoutePanel({ warehouseId, orderIds }: PickRoutePanelProps) {
   if (stops.length === 0) {
     return (
       <p className="my-2 text-[11px] text-amber-600">
-        {unreachableCount} allocated bin{unreachableCount === 1 ? '' : 's'} not placed in the current layout — no route available.
+        {unreachableCount} allocated location{unreachableCount === 1 ? '' : 's'} not placed in the current layout — no route available.
       </p>
     )
   }
@@ -77,7 +77,7 @@ export function PickRoutePanel({ warehouseId, orderIds }: PickRoutePanelProps) {
       </ol>
       {unreachableCount > 0 && (
         <p className="mt-2 text-[11px] text-amber-600">
-          {unreachableCount} allocated bin{unreachableCount === 1 ? '' : 's'} off-route
+          {unreachableCount} allocated location{unreachableCount === 1 ? '' : 's'} off-route
         </p>
       )}
     </div>

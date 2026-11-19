@@ -62,7 +62,7 @@ export function SelectStep({
             {selectedCount}
           </span>
           <span className="pb-0.5 text-xs text-stone-500">
-            bin{selectedCount === 1 ? '' : 's'} selected
+            location{selectedCount === 1 ? '' : 's'} selected
           </span>
           <div className="ml-auto flex gap-1.5">
             <button type="button" onClick={onUndo} disabled={!canUndo} className={MINI_BUTTON}>
@@ -124,11 +124,11 @@ export function SelectStep({
             component free of a matchMedia subscription it would otherwise need
             threaded down from the map's viewport hook. */}
         <p className="mt-2 text-xs leading-relaxed text-stone-500 [@media(pointer:coarse)]:hidden">
-          Drag across bins to select them. Drag the open floor to move the map;
+          Drag across locations to select them. Drag the open floor to move the map;
           hold <kbd className={KBD}>Alt</kbd> to pan from anywhere, and right-drag to erase.
         </p>
         <p className="mt-2 hidden text-xs leading-relaxed text-stone-500 [@media(pointer:coarse)]:block">
-          Drag across bins to select them. Drag the open floor to move the map, and
+          Drag across locations to select them. Drag the open floor to move the map, and
           use two fingers to zoom.
         </p>
       </div>

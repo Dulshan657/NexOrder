@@ -32,11 +32,11 @@ const HomeBinProblemsPanel: React.FC<HomeBinProblemsPanelProps> = ({ warehouseId
     >
       <div className="flex flex-wrap items-center gap-2">
         <h3 id={`home-bin-problems-${warehouseId}`} className="text-sm font-semibold text-stone-800">
-          Home bin problems
+          Home location problems
         </h3>
         {data && rows.length > 0 && (
           <span className="text-xs text-amber-700">
-            {rows.length} of {plural(checked, 'home bin')} need attention
+            {rows.length} of {plural(checked, 'home location')} need attention
           </span>
         )}
         <button
@@ -50,12 +50,12 @@ const HomeBinProblemsPanel: React.FC<HomeBinProblemsPanelProps> = ({ warehouseId
         </button>
       </div>
 
-      {isLoading && <p className="text-xs text-stone-500">Checking home bins…</p>}
+      {isLoading && <p className="text-xs text-stone-500">Checking home locations…</p>}
 
       {!isLoading && error && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-red-600">
           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span>{error instanceof Error ? error.message : 'Could not check the home bins'}</span>
+          <span>{error instanceof Error ? error.message : 'Could not check the home locations'}</span>
           <button type="button" onClick={() => refetch()} className="underline">
             Try again
           </button>
@@ -66,7 +66,7 @@ const HomeBinProblemsPanel: React.FC<HomeBinProblemsPanelProps> = ({ warehouseId
         <p className="flex flex-wrap items-center gap-1.5 text-xs text-stone-600">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
           <span>No problems</span>
-          <span className="text-stone-400">· {plural(checked, 'home bin')} checked</span>
+          <span className="text-stone-400">· {plural(checked, 'home location')} checked</span>
         </p>
       )}
 
@@ -76,7 +76,7 @@ const HomeBinProblemsPanel: React.FC<HomeBinProblemsPanelProps> = ({ warehouseId
             <li key={`${row.productId}:${row.binId}`} data-home={row.binId} className="py-2">
               <p className="text-xs">
                 <span className="font-medium text-stone-900">{row.sku}</span>
-                <span className="text-stone-500"> · bin </span>
+                <span className="text-stone-500"> · location </span>
                 <span className="font-mono text-stone-700">{row.binCode}</span>
               </p>
               <ul className="mt-0.5 space-y-0.5">

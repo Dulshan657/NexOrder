@@ -96,6 +96,13 @@ describe('resolveReceiveScan', () => {
     expect(describeReceiveRefusal(t)).toMatch(/more than one/i)
   })
 
+  it('resolves an EAN-13 that an input method wrapped in direction marks', () => {
+    // NX-0044: the RK95 case — the message showed exactly the stored digits.
+    const t = resolveReceiveScan('⁨‎9312345678907‎⁩', index, WAREHOUSES)
+    expect(t).toMatchObject({ kind: 'product', matchedOn: 'barcode' })
+    if (t.kind === 'product') expect(t.product.id).toBe(10)
+  })
+
   it('does not need locations in the index to resolve a destination', () => {
     // The receiving screen builds its index from the product catalogue; the
     // warehouse map is passed separately precisely so this still works.
@@ -104,5 +111,22 @@ describe('resolveReceiveScan', () => {
       kind: 'warehouse',
       warehouseId: 2,
     })
+  })
+})
+
+describe('describeReceiveRefusal', () => {
+  it('shows the length and any character the operator cannot see', () => {
+    // A code that LOOKS right but is not must be visibly different on screen,
+    // or the operator is told "nothing matches" next to the very code they hold.
+    const msg = describeReceiveRefusal({ kind: 'unknown', normalized: '479208 2500139' })
+    expect(msg).toContain('479208⟨U+00A0⟩2500139')
+    expect(msg).toContain('14 characters')
+  })
+
+  it('keeps a plain unknown code readable', () => {
+    const msg = describeReceiveRefusal({ kind: 'unknown', normalized: 'NOPE-1' })
+    expect(msg).toContain('NOPE-1')
+    expect(msg).toContain('6 characters')
+    expect(msg).not.toContain('⟨')
   })
 })

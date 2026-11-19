@@ -17,7 +17,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadWalkGraph } from '../_shared/loadWalkGraph.ts'
-import { sequencePickRoute, sequenceBatchRoute, type PickStop } from '../_shared/wie/picking.ts'
+import { sequencePickRoute, sequenceBatchRoute, legPaths, simplifyPath, type PickStop } from '../_shared/wie/picking.ts'
 import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
@@ -26,6 +26,25 @@ const inputSchema = z.object({
   warehouse_id: z.number().int().positive(),
   order_ids: z.array(z.string().min(1).max(120)).min(1).max(50),
 })
+
+/**
+ * Node ids → corner cells. Any id the loaded graph does not know (a truncated
+ * node load) drops the PATH, never the response: the client then draws a
+ * straight leg, which is what it did before paths existed.
+ */
+function toPathPoints(
+  ids: number[] | null,
+  nodeById: Map<number, { floor: number; x: number; y: number }>,
+): { floor: number; x: number; y: number }[] | undefined {
+  if (!ids) return undefined
+  const points: { floor: number; x: number; y: number }[] = []
+  for (const id of ids) {
+    const n = nodeById.get(id)
+    if (!n) return undefined
+    points.push({ floor: n.floor, x: n.x, y: n.y })
+  }
+  return simplifyPath(points)
+}
 
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
@@ -87,7 +106,12 @@ serve(async (req: Request) => {
       ? sequencePickRoute(graph, dockNodeId, stopsByOrder[order_ids[0]])
       : sequenceBatchRoute(graph, dockNodeId, stopsByOrder)
 
-    const stops = route.stops.map((s) => ({
+    // The walk behind each leg, from the same graph load that sequenced it
+    // (NX-0037), as corner cells only. Optional: a client that predates it
+    // ignores the field.
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]))
+    const paths = legPaths(graph, dockNodeId, route.stops)
+    const stops = route.stops.map((s, i) => ({
       sequence: s.sequence,
       locationId: s.locationId,
       code: (s.meta?.code as string) ?? null,
@@ -96,6 +120,7 @@ serve(async (req: Request) => {
       orderId: (s.meta?.orderId as string) ?? null,
       qtyBase: (s.meta?.qtyBase as number) ?? 0,
       legDistanceM: s.legDistanceM,
+      path: toPathPoints(paths[i], nodeById),
     }))
 
     return new Response(JSON.stringify({

@@ -148,7 +148,7 @@ export function visibleControls(template: string): VisibleControls {
 
   let note: string | null = null
   if (!origin) {
-    note = 'This pattern numbers bins by their position on the grid, so there is nothing to order or start.'
+    note = 'This pattern numbers locations by their position on the grid, so there is nothing to order or start.'
   } else if (!hasCounter) {
     note = 'This pattern has no {n} counter, so a start number and a fill order would have no effect.'
   }

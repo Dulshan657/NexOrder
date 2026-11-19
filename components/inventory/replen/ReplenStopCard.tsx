@@ -143,7 +143,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
       })
       addToast(
         result.pulledElsewhere
-          ? `Moved to ${stop.toCode} from a different bin — recorded`
+          ? `Moved to ${stop.toCode} from a different location — recorded`
           : `${stop.toCode} topped up`,
         'success',
       )
@@ -194,7 +194,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
           </p>
           {!stop.reachable && (
             <p className="text-[11px] text-amber-700 mt-1">
-              Off the map — this bin is not in the published layout, so it could not be routed.
+              Off the map — this location is not in the published layout, so it could not be routed.
             </p>
           )}
         </div>
@@ -215,7 +215,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
         <div className="mt-4 space-y-3 border-t border-stone-100 pt-3">
           {step === 'source' && (
             <ScanField
-              label="Scan the bin you are pulling from"
+              label="Scan the location you are pulling from"
               value={fromCode}
               onChange={setFromCode}
               onScan={(raw) => {
@@ -228,9 +228,9 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
               }}
               flash={step === 'source' ? flash : null}
               placeholder={stop.code}
-              helper={`Assigned: ${stop.code}. A different bin is fine — it gets recorded.`}
+              helper={`Assigned: ${stop.code}. A different location is fine — it gets recorded.`}
               autoFocus
-              cameraTitle="Scan source bin"
+              cameraTitle="Scan source location"
             />
           )}
 
@@ -253,7 +253,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
               flash={step === 'plate' ? flash : null}
               placeholder={stop.huCode ?? 'HU-000000'}
               helper={pulledElsewhere
-                ? 'You pulled from a different bin, so any plate there is fine.'
+                ? 'You pulled from a different location, so any plate there is fine.'
                 : `Expected ${stop.huCode}`}
               error={verdict.ok === false && verdict.code === 'WRONG_PLATE' ? verdict.message : undefined}
               autoFocus
@@ -370,7 +370,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
       {step === 'idle' && stop.reachable && (stop.legDistanceM > 0 || stop.placeLegM > 0) && (
         <p className="mt-2 text-[11px] text-stone-500 flex items-center gap-1">
           <MapPin className="w-3 h-3" aria-hidden="true" />
-          {Math.round(stop.legDistanceM)} m to the bin
+          {Math.round(stop.legDistanceM)} m to the location
           {stop.placeLegM > 0 && <> · {Math.round(stop.placeLegM)} m to the pick zone</>}
         </p>
       )}

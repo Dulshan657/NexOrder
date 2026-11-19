@@ -56,9 +56,9 @@ const uniq = (): string => `${Date.now()}-${++seq}`
 
 const ALREADY_DEALT = /CONFLICT: This line was already dealt with \(it is now (assigned|accepted|expired)\)\./
 const NO_LONGER_WAITS = /CONFLICT: This line no longer waits for an overflow confirmation\./
-const SUGGESTED_IS_NOW_O1 = /CONFLICT: The suggested bin for this line is now TST-WALK-O1-[^;]+; scan that one\./
-const HOME_HAS_ROOM = /CONFLICT: Put this in its home bin TST-WALK-H-/
-const BIN_INACTIVE = /CONFLICT: That bin is no longer active — re-run the recommendation/
+const SUGGESTED_IS_NOW_O1 = /CONFLICT: The suggested location for this line is now TST-WALK-O1-[^;]+; scan that one\./
+const HOME_HAS_ROOM = /CONFLICT: Put this in its home location TST-WALK-H-/
+const BIN_INACTIVE = /CONFLICT: That location is no longer active — re-run the recommendation/
 const LAYOUT_CHANGED = /CONFLICT: The layout changed since this recommendation — re-run it/
 
 type Source = 'home' | 'overflow' | 'engine' | 'desk' | null
@@ -714,7 +714,7 @@ describe('NX-0033 straight to the walk (live RPCs, rollback-isolated)', () => {
 
       // Counting the line against its own bin, T reads full and is not offered.
       const crowded = (await judged(null)).find((f) => f.binId === t)!
-      expect(homeChoiceRefusal(crowded)).toMatch(/^Bin TST-WALK-T-.* is full/)
+      expect(homeChoiceRefusal(crowded)).toMatch(/^Location TST-WALK-T-.* is full/)
       expect(homeBinChoices(await judged(null)).map((c) => c.binId)).not.toContain(t)
 
       // Giving the line its own space back, T has room for exactly it: offered, and fit.
@@ -967,7 +967,7 @@ const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? ''
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
 /** Exact copy fixed by the plan; a drift in the words is a failing test. */
-const MAKE_HOME_FORBIDDEN_TEXT = 'Only a Manager or Admin can give a product a home bin.'
+const MAKE_HOME_FORBIDDEN_TEXT = 'Only a Manager or Admin can give a product a home location.'
 const ALREADY_DEALT_TEXT = 'This line was already dealt with (it is now assigned).'
 
 interface HttpUser { id: string; jwt: string }
@@ -1314,7 +1314,7 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
       recommendation_id: line, actual_location_id: h.w.n, make_home: true,
     })
     expect(r.status).toBe(409)
-    expect(r.body.error).toEqual({ code: 'CONFLICT', message: "A held line can't make a home bin." })
+    expect(r.body.error).toEqual({ code: 'CONFLICT', message: "A held line can't make a home location." })
     await withClient(async (client) => {
       expect(await row(client, line)).toMatchObject({ status: 'assigned', assigned_location_id: h.held })
       const homes = await client.query<{ n: string }>(
@@ -1340,7 +1340,7 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
     })
     expect(r.status).toBe(409)
     expect(r.body.error?.code).toBe('CONFLICT')
-    expect(r.body.error?.message).toMatch(/can't be a home bin: /)
+    expect(r.body.error?.message).toMatch(/can't be a home location: /)
     expect(r.body.error?.message).toContain(`TST-WALK-Z-${h.w.token}`)
 
     await withClient(async (client) => {
@@ -1401,7 +1401,7 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
       recommendation_id: id, decision: 'confirm_overflow', chosen_location_code: `TST-WALK-O2-${h.w.token}`,
     })
     expect(r.status).toBe(409)
-    expect(r.body.error?.message).toMatch(/^The suggested bin for this line is now TST-WALK-O1-[^;]+; scan that one\.$/)
+    expect(r.body.error?.message).toMatch(/^The suggested location for this line is now TST-WALK-O1-[^;]+; scan that one\.$/)
   })
 
   it('decide-putaway confirm_overflow from a Warehouse user of another site is FORBIDDEN (Review Focus 5)', async () => {

@@ -123,7 +123,7 @@ export interface WarehouseCanvasProps {
   /** zone_profiles.id → zone_type, for tinting a region. */
   zoneTypeByProfileId?: Map<number, string>
   /** Extra SVG drawn on top of the active floor, in cell units × `cell`. */
-  renderOverlay?: (cell: number) => ReactNode
+  renderOverlay?: (cell: number, scale: number) => ReactNode
   /** Location metadata (code, levelRole) for the level rows in a placement
    *  group — needed to label the exploded stack. Absent → levels render with
    *  a bare "L{n}" label instead of their real code/role. */
@@ -628,7 +628,7 @@ export function WarehouseCanvas({
               } : undefined}
             >
               {fitted}
-              {clickable && <title>Rename “{name}” and the bins inside it</title>}
+              {clickable && <title>Rename “{name}” and the locations inside it</title>}
             </text>
           )
         })}
@@ -863,7 +863,7 @@ export function WarehouseCanvas({
         })()}
 
         {/* Overlay marker layers (route/putaway/slotting), supplied by consumers. */}
-        {renderOverlay?.(cell)}
+        {renderOverlay?.(cell, scale)}
       </>
     )
     // `viewport.tx`/`viewport.ty` are deliberately absent: they only move the

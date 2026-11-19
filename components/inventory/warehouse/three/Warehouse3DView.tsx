@@ -10,7 +10,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import type { Product } from '@/types'
+import type { PickRouteStop, Product } from '@/types'
+import { routeScene } from '@/lib/warehouse3d/routeScene'
+import { RoutePath3D, routeLabelItems } from './RoutePath3D'
+import { LabelOverlay, LabelProjector, useLabelRegistry } from './ScreenLabels'
 import type { BinContentRow } from '@/components/inventory/warehouse/useWarehouseViewerModel'
 import { buildScene, type BuildSceneInput, type Vec3 } from '@/lib/warehouse3d/buildScene'
 import { locationsHoldingProduct } from '@/lib/warehouse3d/findStock'
@@ -18,13 +21,19 @@ import { FindStockBar } from './FindStockBar'
 import type { CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
 import { RackInstances } from './RackInstances'
 import { SceneObjects } from './SceneObjects'
-import { AreaLabels } from './AreaLabels'
+import { areaLabelItems } from './AreaLabels'
 import { CameraRig } from './CameraRig'
 
 export type Warehouse3DViewProps = Omit<BuildSceneInput, 'highlightIds'> & {
   /** Find stock (NX-0036): the catalogue and the map's own per-location stock. */
   products: readonly Product[]
   binContents: ReadonlyMap<number, readonly BinContentRow[]>
+  /** The "Ask the engine" pick route (NX-0037); empty when none is chosen. */
+  routeStops: readonly PickRouteStop[]
+  /** A product found in Ask the engine (NX-0039): switches this view's find
+   *  highlight to it, and framing with it. null clears; undefined leaves the
+   *  view's own find bar alone. */
+  focusProductId?: number | null
   selectedLocationId: number | null
   onSelect: (locationId: number) => void
   /** The GPU dropped the context (driver reset, too many tabs). Back to 2D. */
@@ -51,6 +60,9 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
     if (id != null && id === findProductId) setReframe((n) => n + 1)
     else setFindProductId(id)
   }
+  useEffect(() => {
+    if (props.focusProductId !== undefined) setFindProductId(props.focusProductId)
+  }, [props.focusProductId])
   const highlightIds = useMemo(
     () => (findProductId != null ? locationsHoldingProduct(props.binContents, findProductId) : null),
     [props.binContents, findProductId],
@@ -58,6 +70,19 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const scene = useMemo(
     () => buildScene({ layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM, highlightIds }),
     [layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM, highlightIds],
+  )
+  const route = useMemo(
+    () => routeScene({ stops: props.routeStops, levels: scene.levels, floor, cellSizeM: layout.cellSizeM }),
+    [props.routeStops, scene.levels, floor, layout.cellSizeM],
+  )
+  // Every text label over the scene: area names, signs, stop numbers, Start.
+  const labelRegistry = useLabelRegistry()
+  const screenLabels = useMemo(
+    () => {
+      const routeShown = route.lines.length > 0 || route.markers.length > 0
+      return [...areaLabelItems(scene.labels, { muted: routeShown }), ...routeLabelItems(route)]
+    },
+    [scene.labels, route],
   )
   const placedIds = useMemo(() => new Set(placements.map((p) => p.locationId)), [placements])
   const visibleIds = useMemo(() => new Set(scene.levels.map((l) => l.locationId)), [scene.levels])
@@ -126,9 +151,11 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
           selectedLocationId={props.selectedLocationId}
           onSelect={props.onSelect}
         />
-        <AreaLabels labels={scene.labels} />
+        <RoutePath3D route={route} />
+        <LabelProjector labels={screenLabels} registry={labelRegistry} />
         <CameraRig bounds={scene.bounds} preset={preset} nonce={nonce} focus={focus} frame={frame} />
       </Canvas>
+      <LabelOverlay labels={screenLabels} registry={labelRegistry} />
 
       <div className="absolute left-3 top-3 z-30">
         <FindStockBar

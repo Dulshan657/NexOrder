@@ -123,13 +123,13 @@ export function validateStockRow(rec: Record<string, string>, ctx: StockImportCo
     if (!bins || bins.size === 0) {
       return {
         ok: false,
-        error: `This warehouse has no addressable bins, so bin_code "${binCode}" cannot be used. Publish a layout first, or clear the column.`,
+        error: `This warehouse has no addressable locations, so bin_code "${binCode}" cannot be used. Publish a layout first, or clear the column.`,
         sku,
       }
     }
     const bin = resolveByCode(binCode, bins)
     if (bin === undefined) {
-      return { ok: false, error: `No bin "${binCode}" in this warehouse — check the label or the warehouse selection.`, sku }
+      return { ok: false, error: `No location "${binCode}" in this warehouse — check the label or the warehouse selection.`, sku }
     }
     return { ok: true, line, sku, binLocationId: bin.id, binCode: bin.code }
   }

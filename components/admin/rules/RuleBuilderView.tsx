@@ -13,6 +13,8 @@ import type { CandidateBin, RuleDefinition, SkuProfile } from '@/supabase/functi
 import type { WieRule, WieRuleCondition, WieRuleOp } from '@/types'
 
 const SUBJECTS = ['product', 'bin', 'zone'] as const
+// What the operator reads for each stored subject; the stored value stays as it is.
+const SUBJECT_LABEL: Record<(typeof SUBJECTS)[number], string> = { product: 'product', bin: 'location', zone: 'zone' }
 const PRODUCT_ATTRS = ['category', 'hazardClass', 'tempMin', 'tempMax', 'handlingType', 'stackable']
 const BIN_ATTRS = ['zoneTag', 'zoneType', 'capacitySlots', 'usedSlots', 'hasSameProduct']
 const OPS: WieRuleOp[] = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'exists']
@@ -192,7 +194,7 @@ export function RuleBuilderView() {
               return (
                 <div key={i} className="flex items-center gap-1 text-xs">
                   <select className="border border-stone-200 rounded px-1 py-1" value={c.subject} onChange={(e) => patchCond({ subject: e.target.value as WieRuleCondition['subject'] })}>
-                    {SUBJECTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {SUBJECTS.map((s) => <option key={s} value={s}>{SUBJECT_LABEL[s]}</option>)}
                   </select>
                   <select className="border border-stone-200 rounded px-1 py-1" value={c.attr} onChange={(e) => patchCond({ attr: e.target.value })}>
                     {attrs.map((a) => <option key={a} value={a}>{a}</option>)}
@@ -246,7 +248,7 @@ export function RuleBuilderView() {
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
               <input className="border border-stone-200 rounded px-1 py-1" placeholder="hazard class" value={testHazard} onChange={(e) => setTestHazard(e.target.value)} />
-              <input className="border border-stone-200 rounded px-1 py-1" placeholder="bin zone tag" value={testZone} onChange={(e) => setTestZone(e.target.value)} />
+              <input className="border border-stone-200 rounded px-1 py-1" placeholder="location zone tag" value={testZone} onChange={(e) => setTestZone(e.target.value)} />
               <label className="flex items-center gap-1 text-stone-500"><input type="checkbox" checked={testHasSame} onChange={(e) => setTestHasSame(e.target.checked)} /> has same product</label>
             </div>
             {testResult && (

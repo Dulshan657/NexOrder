@@ -69,7 +69,7 @@ const HomeBinRow: React.FC<{ productId: number; warehouse: Warehouse; current?: 
           disabled={setBin.isPending || clearBin.isPending}
           className="text-sm border border-stone-200 rounded-lg px-2 py-1.5 w-56"
         >
-          <option value="">No default bin</option>
+          <option value="">No default location</option>
           {leafBins.map((b) => (
             <option key={b.id} value={b.id}>
               {b.code} · {b.name}
@@ -107,7 +107,7 @@ const HomeBinRow: React.FC<{ productId: number; warehouse: Warehouse; current?: 
             className="flex items-center gap-1.5 text-xs text-stone-600 pb-1.5 ml-auto"
             title={binIsPickZone
               ? 'Raise a top-up task when this slot drops to its minimum'
-              : 'Replenishment refills a pick zone. Choose a pick-zone level as the home bin first.'}
+              : 'Replenishment refills a pick zone. Choose a pick-zone level as the home location first.'}
           >
             <input
               type="checkbox"
@@ -119,7 +119,7 @@ const HomeBinRow: React.FC<{ productId: number; warehouse: Warehouse; current?: 
           </label>
           {!binIsPickZone && (
             <p className="w-full text-[11px] text-stone-500">
-              This bin is{' '}
+              This location is{' '}
               {chosenBin?.levelRole
                 ? `a ${roleLabel(levelRoles, chosenBin.levelRole)} level`
                 : 'not a rack level'}
@@ -156,7 +156,7 @@ const ProductHomeBinsSection: React.FC<ProductHomeBinsSectionProps> = ({ product
         Pick slots &amp; replenishment (racked warehouses)
       </label>
       <p className="text-xs text-stone-500 mb-2">
-        Where this product is suggested for put-away, and — when the bin is a pick zone — the levels at which
+        Where this product is suggested for put-away, and — when the location is a pick zone — the levels at which
         it is automatically topped up from reserve or bulk.
       </p>
       <div className="divide-y divide-stone-100">

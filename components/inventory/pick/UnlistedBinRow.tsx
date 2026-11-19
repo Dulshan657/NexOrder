@@ -28,7 +28,7 @@ export const UnlistedBinRow: React.FC<UnlistedBinRowProps> = ({ orderId, line, d
       resolveBin: (raw: string): PickBinResolution =>
         locations
           ? resolvePickBin(raw, index, locations)
-          : { ok: false, message: 'Bins are still loading. Try again in a moment.' },
+          : { ok: false, message: 'Locations are still loading. Try again in a moment.' },
     }),
     [index, locations],
   )

@@ -108,7 +108,7 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
           imported ? (
             <UnlistedBinRow orderId={orderId} line={line} disabled={!canPick} />
           ) : (
-            <p className="pl-5 pt-1 text-xs text-amber-600">No allocated bin for this line yet.</p>
+            <p className="pl-5 pt-1 text-xs text-amber-600">No allocated location for this line yet.</p>
           )
         ) : (
           <div className="mt-1">

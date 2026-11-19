@@ -118,7 +118,7 @@ function ReportBody({ report }: { report: WarehouseReport }) {
           <span className="text-xs text-stone-500">space used (current fill)</span>
         </div>
         <p className="mt-1 font-mono text-xs text-stone-600">
-          {occupiedBins}/{report.binCount} bins occupied
+          {occupiedBins}/{report.binCount} locations occupied
         </p>
       </Card>
 

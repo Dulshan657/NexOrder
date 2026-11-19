@@ -32,7 +32,7 @@ export function WarehouseEmptyState({
   const sub =
     reason === 'unpublished'
       ? 'Publish its layout in the Layout Designer to see the grid, racks and intelligence overlays here.'
-      : 'Design a layout — or import a floor plan — to turn ' + warehouseName + ' into a visual, bin-level warehouse.'
+      : 'Design a layout — or import a floor plan — to turn ' + warehouseName + ' into a visual, location-level warehouse.'
 
   if (showStock) {
     return (

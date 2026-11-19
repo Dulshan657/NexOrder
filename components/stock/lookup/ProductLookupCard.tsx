@@ -169,7 +169,7 @@ export function ProductLookupCard({
         ) : withStock.length === 0 ? (
           <div className="glass-card rounded-xl p-8 text-center">
             <MapPin className="mx-auto mb-2 h-8 w-8 text-stone-300" aria-hidden="true" />
-            <p className="text-sm text-stone-700">Not in any bin here</p>
+            <p className="text-sm text-stone-700">Not in any location here</p>
             <p className="mt-1 text-xs text-stone-600">
               {inScope.length > 0
                 ? `${inScope.length} empty ${inScope.length === 1 ? 'slot is' : 'slots are'} still reserved for it.`
@@ -216,7 +216,7 @@ export function ProductLookupCard({
       {scopedHomeBins.length > 0 && (
         <section className="space-y-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-stone-900">
-            <Home className="h-4 w-4 text-stone-600" aria-hidden="true" /> Home bin
+            <Home className="h-4 w-4 text-stone-600" aria-hidden="true" /> Home location
           </h3>
           <ul className="glass-card divide-y divide-stone-100 overflow-hidden rounded-xl">
             {scopedHomeBins.map((hb) => {

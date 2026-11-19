@@ -74,7 +74,7 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
       {reslotCount > 0 && (
         <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
           <span className="font-semibold">Layout relocation in progress</span> — {reslotCount} move{reslotCount === 1 ? '' : 's'} pending
-          from a recent layout publish. Accept each to physically relocate its stock into the new bins.
+          from a recent layout publish. Accept each to physically relocate its stock into the new locations.
         </div>
       )}
 
@@ -82,7 +82,7 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
         <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-stone-100 animate-pulse" />)}</div>
       ) : suggestions.length === 0 ? (
         <div className="text-center py-8 text-xs text-stone-500 border border-dashed border-stone-200 rounded-lg">
-          No re-slotting suggestions. Run a re-optimization to look for better bin assignments.
+          No re-slotting suggestions. Run a re-optimization to look for better location assignments.
         </div>
       ) : (
         <ul className="divide-y divide-stone-100 border border-stone-100 rounded-lg overflow-hidden">

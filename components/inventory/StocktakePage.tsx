@@ -122,7 +122,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
     <PageFrame>
       <PageHeader
         title={ADMIN_TAB_LABELS.Stocktake}
-        description="Count what is in a bin and post any difference."
+        description="Count what is in a location and post any difference."
         actions={
           // A native <select> sizes itself to its WIDEST OPTION, not to its box.
           // At 360px that made this 267px starting at x=146 — 53px off the side
@@ -159,7 +159,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
         ) : (
           <>
             <p className="text-xs text-stone-500">
-              Scan a bin to count it. Bulk and floor-stacked stock is counted on the site root.
+              Scan a location to count it. Bulk and floor-stacked stock is counted on the site root.
             </p>
             <StickyScanBar>
               <CountLocationFinder locations={locations} onPick={setSelected} />

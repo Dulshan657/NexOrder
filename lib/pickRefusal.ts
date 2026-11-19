@@ -44,7 +44,7 @@ const WORDS: Readonly<Record<string, string>> = {
   HELD_AT_OTHER_WAREHOUSE:
     'Another warehouse still holds stock for this line. Ask them to pick it, or ask a manager to finish the line short.',
   BAD_LOCATION:
-    'That bin is not in a warehouse that is picking this order. Check the bin label and try again.',
+    'That location is not in a warehouse that is picking this order. Check the location label and try again.',
   LINE_CLOSED_SHORT:
     'This line was already finished short, so it cannot be picked. Put anything you took back.',
   ORDER_CANCELLED: 'This order was cancelled. Stop picking it and put anything already taken back.',

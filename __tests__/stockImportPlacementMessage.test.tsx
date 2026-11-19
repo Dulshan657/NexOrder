@@ -10,7 +10,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 // stays, after it. Made-up data only.
 
 const HOME_MSG =
-  'Put this in its home bin TST-HOME-A1; it still has room for 6. If it is full, ask a manager to set its maximum.'
+  'Put this in its home location TST-HOME-A1; it still has room for 6. If it is full, ask a manager to set its maximum.'
 
 const receiveMutate = vi.fn()
 const decidePutaway = vi.fn()

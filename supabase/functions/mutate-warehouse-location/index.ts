@@ -574,7 +574,7 @@ serve(async (req: Request) => {
       const root = await rootWarehouse(admin, input.data.parent_id)
       if (!root) throw new EdgeFunctionError('INVALID_INPUT', 'Parent is not inside a warehouse')
       if (root.location_type !== 'racked') {
-        throw new EdgeFunctionError('CONFLICT', 'Storage bins can only be added to a racked warehouse')
+        throw new EdgeFunctionError('CONFLICT', 'Storage locations can only be added to a racked warehouse')
       }
 
       const row = {
@@ -1588,7 +1588,7 @@ serve(async (req: Request) => {
       const whCode = (whRow as any).code as string
       const layoutId = (whRow as any).active_layout_id as number | null
       if ((whRow as any).location_type !== 'racked' || !layoutId) {
-        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no drawn bins to recode')
+        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no drawn locations to recode')
       }
 
       const stored = await loadCodePattern(admin, input.warehouse_id)
@@ -1969,7 +1969,7 @@ serve(async (req: Request) => {
 
     // deactivate
     if (await nodeHasStock(admin, input.id)) {
-      throw new EdgeFunctionError('CONFLICT', 'Cannot deactivate a bin that still holds stock — move it out first')
+      throw new EdgeFunctionError('CONFLICT', 'Cannot deactivate a location that still holds stock — move it out first')
     }
     const { data: deactivated, error } = await admin.from('locations').update({ is_active: false }).eq('id', input.id).select().single()
     if (error || !deactivated) throw new EdgeFunctionError('INTERNAL', error?.message ?? 'Failed to deactivate location')

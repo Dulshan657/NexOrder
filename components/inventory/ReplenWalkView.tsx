@@ -104,7 +104,7 @@ const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork })
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Find a product, bin or plate…"
+          placeholder="Find a product, location or plate…"
           className="flex-1 min-w-[200px] text-sm rounded-lg border border-stone-200 px-3 py-2 min-h-[44px]"
         />
         {route?.mode === 'engine' && route.totalDistanceM > 0 && (

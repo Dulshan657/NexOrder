@@ -40,7 +40,7 @@ The warehouse half of the product.
   pallets and per-pallet labelling
 - **Putaway** with a routing engine that scores every candidate location against
   the operator's own rules, walks the operator to it, and records the scan
-- **Directed picking**, routed bin by bin, scan-enforced at the bin and the item
+- **Directed picking**, routed location by location, scan-enforced at the location and the item
 - **Replenishment** from reserve and bulk locations to pick faces, driven by
   per-product minimum and maximum levels
 - **Slotting** rules that say where a product belongs, and an off-home queue

@@ -62,13 +62,13 @@ export function SlotSelectStep(p: SlotSelectStepProps) {
         <div className="flex items-baseline gap-2">
           <span className="font-display text-2xl tabular-nums text-stone-900">{p.selectedCount}</span>
           <span className="text-xs text-stone-500">
-            {p.selectedCount === 1 ? 'rack or bin' : 'racks and bins'} selected
+            {p.selectedCount === 1 ? 'rack or location' : 'racks and locations'} selected
           </span>
         </div>
         {/* The number that actually matters downstream: a rack counts once here
             but contributes all its levels to the block. */}
         <p className={`${HINT} mt-1`}>
-          {p.binCount} bin{p.binCount === 1 ? '' : 's'} in total once racks are expanded.
+          {p.binCount} location{p.binCount === 1 ? '' : 's'} in total once racks are expanded.
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           <button type="button" className={MINI_BUTTON} disabled={!p.canUndo} onClick={p.onUndo}>
@@ -148,7 +148,7 @@ export function SlotBlockStep(p: SlotBlockStepProps) {
       <div className={CARD}>
         <div className="flex items-baseline gap-2">
           <span className="font-display text-2xl tabular-nums text-stone-900">{p.binCount}</span>
-          <span className="text-xs text-stone-500">bin{p.binCount === 1 ? '' : 's'} in this block</span>
+          <span className="text-xs text-stone-500">location{p.binCount === 1 ? '' : 's'} in this block</span>
         </div>
       </div>
 
@@ -242,7 +242,7 @@ export function SlotRuleStep(p: SlotRuleStepProps) {
             belong on the settings table where they can be read together — not
             buried in a map panel a step from a paint stroke. */}
         <p className={`${HINT} mt-2`}>
-          Brand only, and soft: it will prefer this block, never refuse a bin. For
+          Brand only, and soft: it will prefer this block, never refuse a location. For
           categories, suppliers, a single SKU or a hard rule, use Settings →
           Warehouse → Slotting rules.
         </p>

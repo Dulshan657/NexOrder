@@ -1,21 +1,25 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
 import type { Order, Product, HoReCa, User, Invoice, SalesTarget, Promotion, Visit, ScheduledVisit, DashboardTimePeriod } from '../types';
 import { UserRole } from '../types';
-import { DollarSign, ShoppingBag, BarChart3, Wallet, AlertTriangle, CreditCard, Users, Package, Target, Download, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CreditCard, Package, Download, Target } from 'lucide-react';
 import KPICard from './dashboard/KPICard';
 import ActionItemsBoard from './ActionItemsBoard';
-import OptimizedImage from './OptimizedImage';
 import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
 import TimePeriodToggle from './dashboard/TimePeriodToggle';
-import ExpandableSection from './dashboard/ExpandableSection';
 import SalesLineChart from './charts/SalesLineChart';
 import InventoryDispatchSection from './admin/InventoryDispatchSection';
-import HorizontalBarChart from './charts/HorizontalBarChart';
+import DashCard from './dashboard/DashCard';
+import RankedList, { type RankedItem } from './dashboard/RankedList';
+import TargetBar from './dashboard/TargetBar';
+import EmptyState from './dashboard/EmptyState';
+import SegmentBadge from './SegmentBadge';
 import { MODULE_FIELD_OPS, MODULE_INVOICING, MODULE_PO_INBOX, MODULE_PROMOTIONS } from '../lib/modules';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
-import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
+import { ADMIN_TAB_LABELS, type AdminTab } from '../lib/adminTabUrl';
 import { PageFrame } from './ui/PageFrame';
 import { PageHeader } from './ui/PageHeader';
+import { useDashNav } from '../hooks/useDashNav';
+import { requestOrderImportTab, type OrderImportTab } from '../lib/orderImportHandoff';
 
 // The Dashboard is CORE — every tenant lands on it — but four of its panels
 // report on modules a tenant may not have. Gated on the DECLARATION as well as
@@ -28,14 +32,16 @@ import { PageHeader } from './ui/PageHeader';
 // surface the tenant does not own come out.
 const POInboxStatsTile = MODULE_PO_INBOX ? lazyWithRetry(() => import('./admin/POInboxStatsTile')) : null;
 const SalesTargetModal = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./SalesTargetModal')) : null;
-import SegmentBadge from './SegmentBadge';
-import { getAllOutstanding, getOverduePaymentsSummary } from '../services/accountingService';
-import { getRestockAlerts, getDaysToStockout } from '../services/productMovementService';
+import { getAllOutstanding } from '../services/accountingService';
+import { getDaysToStockout } from '../services/productMovementService';
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { getPromotionROI } from '../services/promotionROIService';
 import { computeRepProductivity } from '../services/repProductivityService';
 import { computeTargetProgress, filterOrders } from '../lib/semantic';
-import { appDateKey, appDateKeysBetween } from '../lib/period';
+import { formatCount, formatMoney, pctDelta } from '../lib/dashboardFormat';
+import { appDateKey } from '../lib/period';
+import { dailySeries } from '../lib/dashboardSeries';
+import Band from './dashboard/Band';
 import { useDashboardRange } from '../hooks/useDashboardRange';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
 import type { CustomerRevenue, DateRevenue, ProductUnits, RepRevenue } from '../lib/semantic';
@@ -56,6 +62,9 @@ interface AdminDashboardProps {
   onNavigateTab?: (tab: string) => void;
 }
 
+const TOP_N = 5;
+const SEGMENT_ORDER = ['high_value', 'growing', 'new', 'declining', 'at_risk'] as const;
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   allOrders, products, hoReCas, users, invoices, salesTargets = [], onUpdateSalesTargets,
   currentUser, lowStockThreshold = 10, promotions = [], visits = [], routes = [], onNavigateTab,
@@ -65,17 +74,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [customEnd, setCustomEnd] = useState(() => appDateKey(new Date()));
   const [showTargetModal, setShowTargetModal] = useState(false);
 
+  // Every link on the page goes through here: a tab this role cannot open, or
+  // whose module is off in this build, gets no handler and renders as text.
+  const go = useDashNav(currentUser.role, onNavigateTab as ((tab: AdminTab) => void) | undefined);
+
   // This window and the one before it, for the deltas. Both come from
   // dashboardRange, the same Sydney calendar Nex resolves "this week" and "this
-  // month" in (lib/period), so the KPIs and Nex count the same orders. This was
-  // the browser's own zone with a Sunday week start until NX-0008.
+  // month" in (lib/period), so the KPIs and Nex count the same orders.
   // Re-resolved every minute while the page is open: the comparison stops at
   // the same time of day (NX-0010), so a range fixed at opening would drift.
   const dateRange = useDashboardRange(period, customStart, customEnd);
-  const periodFilter = useMemo(
-    () => ({ from: dateRange.from, to: dateRange.to }),
-    [dateRange],
-  );
+  const periodFilter = useMemo(() => ({ from: dateRange.from, to: dateRange.to }), [dateRange]);
   const previousFilter = useMemo(
     () => ({ from: dateRange.previous.from, to: dateRange.previous.to }),
     [dateRange],
@@ -83,10 +92,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const metricCtx = useMetricContext({ orders: allOrders, products, lowStockThreshold });
 
-  const filteredOrders = useMemo(
-    () => filterOrders(allOrders, periodFilter),
-    [allOrders, periodFilter],
-  );
+  const filteredOrders = useMemo(() => filterOrders(allOrders, periodFilter), [allOrders, periodFilter]);
 
   const revenue = useMetric<number>('sales.revenue', metricCtx, periodFilter);
   const prevRevenue = useMetric<number>('sales.revenue', metricCtx, previousFilter);
@@ -96,411 +102,366 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const prevAov = useMetric<number>('sales.averageOrderValue', metricCtx, previousFilter);
 
   // Receivables math stays inline: the AR domain is deliberately outside the
-  // semantic layer's first cut. See lib/semantic/registry.ts when it lands.
-  const metrics = useMemo(() => {
+  // semantic layer's first cut.
+  const receivables = useMemo(() => {
     const totalInvoiced = invoices.reduce((s, i) => s + i.amount, 0);
     const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0);
     const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + i.amount, 0);
-    const collectionRate = totalInvoiced > 0 ? (totalPaid / totalInvoiced) * 100 : 0;
-
-    const delta = (curr: number, prev: number) => prev > 0 ? ((curr - prev) / prev) * 100 : curr > 0 ? 100 : 0;
-
-    return {
-      revenue, prevRevenue, revenueDelta: delta(revenue, prevRevenue),
-      orders: orderCount, prevOrders: prevOrderCount, ordersDelta: delta(orderCount, prevOrderCount),
-      aov, prevAov, aovDelta: delta(aov, prevAov),
-      collectionRate, totalOverdue,
-    };
-  }, [invoices, revenue, prevRevenue, orderCount, prevOrderCount, aov, prevAov]);
+    return { collectionRate: totalInvoiced > 0 ? (totalPaid / totalInvoiced) * 100 : 0, totalOverdue };
+  }, [invoices]);
 
   const lowStockProducts = useMetric<readonly Product[]>('inventory.lowStockProducts', metricCtx);
   const outOfStockProducts = useMetric<readonly Product[]>('inventory.outOfStockProducts', metricCtx);
 
-  // Alerts
-  const alerts = useMemo(() => {
-    const overdue = getOverduePaymentsSummary(invoices);
-    const outstanding = getAllOutstanding(invoices, hoReCas);
-    const restockAlerts = getRestockAlerts(allOrders, products);
-    const stockoutData = getDaysToStockout(allOrders, products).filter(d => (d.daysRemaining ?? Infinity) <= 30);
-    // Was `p.inventory > 0 && p.inventory < lowStockThreshold` / `p.inventory <= 0`,
-    // which used a strict `<`, ignored each product's own reorderPoint and
-    // alerted on retired products. The registry applies the canonical
-    // classifyStock rule instead, so a product exactly at its threshold is low.
-    const lowStock = lowStockProducts;
-    const outOfStock = outOfStockProducts;
+  const insights = useMemo(() => computeAllHoReCaInsights(allOrders, hoReCas), [allOrders, hoReCas]);
 
-    const allInsights = computeAllHoReCaInsights(allOrders, hoReCas);
-    const atRisk = allInsights.filter(i => i.segment === 'at_risk' || i.segment === 'declining');
-
-    return { overdue, outstanding, restockAlerts, stockoutData, lowStock, outOfStock, atRisk };
-  }, [invoices, hoReCas, allOrders, products, lowStockProducts, outOfStockProducts]);
-
+  // ── Needs attention ──────────────────────────────────────────────────────
   const actionColumns = useMemo((): ActionItemColumn[] => {
-    const overdueItems: ActionItem[] = alerts.outstanding.map(o => ({
+    const toAccounts = go('Accounts');
+    const toProducts = go('Products');
+    const toInsights = go('HoReCa Insights');
+
+    const overdueItems: ActionItem[] = getAllOutstanding(invoices, hoReCas).map(o => ({
       id: `overdue-${o.hoReCaId}`,
       title: o.hoReCaName,
-      subtitle: `$${o.totalOutstanding.toFixed(2)}${o.isBlocked ? ' · Blocked' : ''}`,
-      onClick: onNavigateTab ? () => onNavigateTab('Accounts') : undefined,
+      subtitle: `${formatMoney(o.totalOutstanding)}${o.isBlocked ? ' · Blocked' : ''}`,
+      onClick: toAccounts,
     }));
 
-    // Stock counts here (products.inventory) and the days-to-stockout
-    // projection (getDaysToStockout) are both company-wide: sales velocity has
-    // no warehouse dimension, so this data is never scoped to a single site.
-    // Label plainly rather than quietly scoping just the numerator, which
-    // would produce a plausible-looking but wrong days-to-stockout number.
+    // Stock counts (products.inventory) and days-to-stockout are company-wide:
+    // sales velocity has no warehouse dimension. Labelled plainly rather than
+    // scoping only the numerator into a plausible-looking but wrong figure.
+    const stockoutData = getDaysToStockout(allOrders, products).filter(d => (d.daysRemaining ?? Infinity) <= 30);
     const stockItems: ActionItem[] = [
-      ...alerts.outOfStock.map(p => ({
+      ...outOfStockProducts.map(p => ({
         id: `stock-out-${p.id}`,
         title: p.name,
         subtitle: 'Out of stock — all sites',
         badge: { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' },
-        onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
+        onClick: toProducts,
       })),
-      ...alerts.stockoutData.map(s => ({
+      ...stockoutData.map(s => ({
         id: `stock-risk-${s.productId}`,
         title: s.productName,
         subtitle: `${s.currentStock} left (all sites) · ${s.daysRemaining ?? '?'}d`,
-        onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
+        onClick: toProducts,
       })),
-      ...alerts.lowStock.map(p => ({
+      ...lowStockProducts.map(p => ({
         id: `stock-low-${p.id}`,
         title: p.name,
         subtitle: `${p.inventory} left (all sites)`,
-        onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
+        onClick: toProducts,
       })),
     ];
 
-    const riskItems: ActionItem[] = alerts.atRisk.map(c => ({
-      id: `risk-${c.hoReCaId}`,
-      title: c.hoReCaName,
-      subtitle: c.daysSinceLastOrder != null ? `${c.daysSinceLastOrder}d ago` : undefined,
-      badge: {
-        label: c.segment === 'at_risk' ? 'At Risk' : 'Declining',
-        color: c.segment === 'at_risk' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-orange-50 text-orange-800 border-orange-200',
-      },
-      onClick: onNavigateTab ? () => onNavigateTab('HoReCa Insights') : undefined,
-    }));
+    const riskItems: ActionItem[] = insights
+      .filter(i => i.segment === 'at_risk' || i.segment === 'declining')
+      .map(c => ({
+        id: `risk-${c.hoReCaId}`,
+        title: c.hoReCaName,
+        subtitle: c.daysSinceLastOrder != null ? `Last order ${c.daysSinceLastOrder}d ago` : undefined,
+        badge: {
+          label: c.segment === 'at_risk' ? 'At risk' : 'Declining',
+          color: c.segment === 'at_risk' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-orange-50 text-orange-800 border-orange-200',
+        },
+        onClick: toInsights,
+      }));
 
     return [
-      { id: 'overdue', label: 'Overdue Payments', icon: CreditCard, severity: 'critical' as const,
-        items: overdueItems, onViewAll: onNavigateTab ? () => onNavigateTab('Accounts') : undefined },
-      { id: 'stock', label: 'Low / Out of Stock (All Sites)', icon: Package, severity: 'warning' as const,
-        items: stockItems, onViewAll: onNavigateTab ? () => onNavigateTab('Products') : undefined },
-      { id: 'at-risk', label: 'At-Risk Customers', icon: AlertTriangle, severity: 'warning' as const,
-        items: riskItems, onViewAll: onNavigateTab ? () => onNavigateTab('HoReCa Insights') : undefined },
+      { id: 'overdue', label: 'Overdue payments', icon: CreditCard, severity: 'critical' as const, items: overdueItems, onViewAll: toAccounts },
+      { id: 'stock', label: 'Low / out of stock', icon: Package, severity: 'warning' as const, items: stockItems, onViewAll: toProducts },
+      { id: 'at-risk', label: 'At-risk customers', icon: AlertTriangle, severity: 'warning' as const, items: riskItems, onViewAll: toInsights },
     ];
-  }, [alerts, onNavigateTab]);
+  }, [go, invoices, hoReCas, allOrders, products, outOfStockProducts, lowStockProducts, insights]);
 
-  // Sales trend chart data. The registry supplies the per-day revenue; filling
-  // the gaps stays here because only this component knows the axis it is drawing.
+  // ── Trend: this period and the one before, day for day ──────────────────
   const revenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, periodFilter);
-  const salesOverTimeData = useMemo(() => {
-    const salesByDate = new Map(revenueByDate.map(row => [row.date, row.revenue]));
+  const prevRevenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, previousFilter);
+  const trend = useMemo(() => dailySeries(revenueByDate, dateRange.from, dateRange.to), [revenueByDate, dateRange]);
+  const prevTrend = useMemo(
+    () => dailySeries(prevRevenueByDate, dateRange.previous.from, dateRange.previous.to),
+    [prevRevenueByDate, dateRange],
+  );
 
-    // Same Sydney date keys sales.revenueByDate groups on, so no day is lost to a zone mismatch.
-    return appDateKeysBetween(dateRange.from, dateRange.to).map(date => ({
-      date,
-      revenue: salesByDate.get(date) || 0,
-    }));
-  }, [revenueByDate, dateRange]);
-
-  // Top data. The ranking and the rep-roles-only rule live in the registry; only
-  // the top-5 cut and the display formatting are this component's business.
+  // ── Rankings ─────────────────────────────────────────────────────────────
   const unitsByProduct = useMetric<readonly ProductUnits[]>('sales.unitsByProduct', metricCtx, periodFilter);
   const revenueByCustomer = useMetric<readonly CustomerRevenue[]>('sales.revenueByCustomer', metricCtx, periodFilter);
   const revenueByRep = useMetric<readonly RepRevenue[]>('sales.revenueByRep', metricCtx, periodFilter);
 
-  const { topProducts, topCustomers, topReps } = useMemo(() => ({
-    topProducts: unitsByProduct.slice(0, 5)
-      .map(row => ({ label: row.name, value: row.units, formattedValue: `${row.units} units` })),
-    topCustomers: revenueByCustomer.slice(0, 5)
-      .map(row => ({ name: row.name, value: `$${row.revenue.toFixed(2)}` })),
-    topReps: revenueByRep.slice(0, 5)
-      .map(row => ({ name: row.name, value: `$${row.revenue.toFixed(2)}`, avatarUrl: row.avatarUrl })),
-  }), [unitsByProduct, revenueByCustomer, revenueByRep]);
-
-  // Promo ROI
-  const promoROI = useMemo(() => getPromotionROI(promotions, allOrders, products), [promotions, allOrders, products]);
-
-  // Rep productivity summary
-  const repProductivity = useMemo(() => {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
-    const now = new Date();
+  // Rep productivity: the last 30 days, whatever the page period — labelled so.
+  const productivityByRep = useMemo(() => {
+    const from = new Date(Date.now() - 30 * 86400000);
+    const to = new Date();
     const reps = users.filter(u => u.role === UserRole.FIELD_REP || u.role === UserRole.OFFICE_REP);
-
-    return reps.map(rep => ({
-      name: rep.name,
-      ...computeRepProductivity(visits, routes, allOrders, rep.id, thirtyDaysAgo, now),
-    }));
+    return new Map(reps.map(rep => [rep.id, computeRepProductivity(visits, routes, allOrders, rep.id, from, to)]));
   }, [users, visits, routes, allOrders]);
 
-  // Customer segment distribution
-  const segmentDistribution = useMemo(() => {
-    const allInsights = computeAllHoReCaInsights(allOrders, hoReCas);
-    const counts: Record<string, number> = { high_value: 0, growing: 0, declining: 0, at_risk: 0, new: 0 };
-    allInsights.forEach(i => { counts[i.segment] = (counts[i.segment] || 0) + 1; });
-    return counts;
-  }, [allOrders, hoReCas]);
+  const toProductsTab = go('Products');
+  const toHoReCaTab = go('HoReCa');
 
-  // CSV Export
+  const topProducts = useMemo((): RankedItem[] => {
+    const rows = unitsByProduct.slice(0, TOP_N);
+    const max = rows[0]?.units ?? 0;
+    return rows.map(row => ({
+      id: row.name,
+      label: row.name,
+      value: `${formatCount(row.units)} units`,
+      share: max > 0 ? row.units / max : 0,
+      onClick: toProductsTab,
+    }));
+  }, [unitsByProduct, toProductsTab]);
+
+  const topCustomers = useMemo((): RankedItem[] => {
+    const rows = revenueByCustomer.slice(0, TOP_N);
+    const max = rows[0]?.revenue ?? 0;
+    return rows.map(row => ({
+      id: row.horecaId,
+      label: row.name,
+      value: formatMoney(row.revenue, { cents: false }),
+      share: max > 0 ? row.revenue / max : 0,
+      onClick: toHoReCaTab,
+    }));
+  }, [revenueByCustomer, toHoReCaTab]);
+
+  const topReps = useMemo((): RankedItem[] => {
+    const rows = revenueByRep.slice(0, TOP_N);
+    const max = rows[0]?.revenue ?? 0;
+    return rows.map(row => {
+      const p = productivityByRep.get(row.repId);
+      return {
+        id: row.repId,
+        label: row.name,
+        avatarUrl: row.avatarUrl,
+        value: formatMoney(row.revenue, { cents: false }),
+        sub: p ? `${p.visitCompletionRate}% visits done · ${p.visitConversionRate}% converted` : undefined,
+        share: max > 0 ? row.revenue / max : 0,
+      };
+    });
+  }, [revenueByRep, productivityByRep]);
+
+  const segmentCounts = useMemo(() => {
+    const counts: Record<string, number> = { high_value: 0, growing: 0, new: 0, declining: 0, at_risk: 0 };
+    insights.forEach(i => { counts[i.segment] = (counts[i.segment] || 0) + 1; });
+    return counts;
+  }, [insights]);
+
+  const promoROI = useMemo(
+    () => (MODULE_PROMOTIONS ? getPromotionROI(promotions, allOrders, products) : []),
+    [promotions, allOrders, products],
+  );
+  const topPromos = useMemo(
+    () => [...promoROI].sort((a, b) => b.revenueFromPromoOrders - a.revenueFromPromoOrders).slice(0, 3),
+    [promoROI],
+  );
+
+  // ── Links ────────────────────────────────────────────────────────────────
+  const toOrders = go('Order Import');
+  const openOrders = toOrders
+    ? (tab: OrderImportTab) => { requestOrderImportTab(tab); toOrders(); }
+    : undefined;
+
   const handleExportCSV = () => {
-    const headers = ["Order ID", "Date", "HoReCa", "Rep", "Status", "Total"];
+    const headers = ['Order ID', 'Date', 'HoReCa', 'Rep', 'Status', 'Total'];
     const rows = filteredOrders.map(o => [
-      o.id, new Date(o.orderDate).toLocaleString(), o.hoReCa.name, o.submittedBy.name, o.status || 'N/A', o.total.toFixed(2)
+      o.id, new Date(o.orderDate).toLocaleString('en-AU'), o.hoReCa.name, o.submittedBy.name, o.status || 'N/A', o.total.toFixed(2),
     ].map(String));
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    const link = document.createElement("a");
-    link.setAttribute("href", encodeURI(csvContent));
-    link.setAttribute("download", `sales_report_${new Date().toISOString().split('T')[0]}.csv`);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `sales_report_${appDateKey(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Sales Targets
   const myTargets = salesTargets.filter(t => t.userId === currentUser.id);
+  const showSideColumn = MODULE_FIELD_OPS || Boolean(POInboxStatsTile);
+  const showPrograms = (MODULE_PROMOTIONS && topPromos.length > 0) || (MODULE_FIELD_OPS && Boolean(onUpdateSalesTargets));
 
   return (
     <PageFrame>
-      {/* A. Command Bar */}
       <PageHeader
         title={ADMIN_TAB_LABELS.Dashboard}
-        description="Overview of business performance"
+        description="How the business is doing, and what needs you"
         actions={
           <>
             <TimePeriodToggle value={period} onChange={setPeriod} />
             {period === 'custom' && (
               <div className="flex items-center gap-2">
-                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-                  className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
+                <input type="date" aria-label="From" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
                 <span className="text-stone-500 text-xs">to</span>
-                <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-                  className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
+                <input type="date" aria-label="To" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                  className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
               </div>
             )}
             <button onClick={handleExportCSV} disabled={filteredOrders.length === 0}
-              className="bg-nexgen-blue/10 text-nexgen-blue border border-nexgen-blue/20 font-semibold py-1.5 px-3 touch-target-y rounded-lg hover:bg-nexgen-blue/20 disabled:opacity-40 flex items-center gap-1.5 text-sm transition-colors cursor-pointer">
-              <Download className="w-4 h-4" /> CSV
+              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-50 disabled:opacity-40 transition-colors duration-150 cursor-pointer touch-target-y">
+              <Download className="w-3.5 h-3.5" aria-hidden="true" /> Export CSV
             </button>
           </>
         }
       />
 
-      {/* B. Operational Alerts Banner */}
       <ActionItemsBoard
-        title="Action Items"
+        title="Needs attention"
         columns={actionColumns}
         storageKey="admin_action_items"
         users={users}
         showAssign={true}
       />
 
-      {/* C. Revenue Snapshot KPIs */}
-      <div className={`grid grid-cols-2 gap-4 ${MODULE_INVOICING ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
-        <KPICard icon={DollarSign} label="Revenue" value={`$${metrics.revenue.toFixed(2)}`} delta={metrics.revenueDelta} />
-        <KPICard icon={ShoppingBag} label="Orders" value={String(metrics.orders)} delta={metrics.ordersDelta} />
-        <KPICard icon={BarChart3} label="Avg Order Value" value={`$${metrics.aov.toFixed(2)}`} delta={metrics.aovDelta} />
-        {MODULE_INVOICING && (
-        <KPICard icon={Wallet} label="Collection Rate" value={`${metrics.collectionRate.toFixed(0)}%`}
-          subtitle={metrics.totalOverdue > 0 ? `$${metrics.totalOverdue.toFixed(2)} overdue` : undefined} />
-        )}
-      </div>
-
-      {/* PO Inbox health tile — visible to Admin + Manager */}
-      {MODULE_PO_INBOX && (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-1">
-          <POInboxStatsTile onNavigate={onNavigateTab ? () => onNavigateTab('PO Inbox') : undefined} />
+      <Band label="Key numbers">
+        <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${MODULE_INVOICING ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+          <KPICard label="Revenue" value={formatMoney(revenue)} delta={pctDelta(revenue, prevRevenue)} onClick={toOrders} />
+          <KPICard label="Orders" value={formatCount(orderCount)} delta={pctDelta(orderCount, prevOrderCount)} onClick={toOrders} />
+          <KPICard label="Avg order value" value={formatMoney(aov)} delta={pctDelta(aov, prevAov)} onClick={toOrders} />
+          {MODULE_INVOICING && (
+            <KPICard
+              label="Collection rate"
+              value={`${receivables.collectionRate.toFixed(0)}%`}
+              subtitle={receivables.totalOverdue > 0 ? `${formatMoney(receivables.totalOverdue)} overdue` : 'Nothing overdue'}
+              onClick={go('Accounts')}
+            />
+          )}
         </div>
-      </div>
-      )}
 
-      {/* C2. Inventory & Dispatch visualisations */}
-      <InventoryDispatchSection
-        allOrders={allOrders}
-        products={products}
-        lowStockThreshold={lowStockThreshold}
-        onNavigateTab={onNavigateTab}
-      />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <DashCard
+            title="Sales trend"
+            caption="Revenue by day · dashed line is the previous period"
+            className={showSideColumn ? 'lg:col-span-2' : 'lg:col-span-3'}
+          >
+            <SalesLineChart data={trend} previous={prevTrend} />
+          </DashCard>
 
-      {/* D. Sales Trend + Team Performance */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className={`glass-card rounded-xl p-5 ${MODULE_FIELD_OPS ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
-          <h3 className="text-sm font-semibold text-stone-900 mb-4">Sales Trend</h3>
-          <SalesLineChart data={salesOverTimeData} />
-        </div>
-        {MODULE_FIELD_OPS && (
-        <div className="glass-card rounded-xl p-5 space-y-5">
-          <div>
-            <h3 className="text-sm font-semibold text-stone-900 mb-3">Top Reps</h3>
-            {topReps.length > 0 ? (
-              <ul className="space-y-2.5">
-                {topReps.map((rep, i) => (
-                  <li key={i} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      {rep.avatarUrl && <OptimizedImage src={rep.avatarUrl} alt={rep.name} className="h-7 w-7 rounded-full border border-stone-200" transformWidth={128} />}
-                      <span className="text-sm text-stone-700">{rep.name}</span>
-                    </div>
-                    <span className="text-sm font-semibold text-nexgen-blue">{rep.value}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="text-sm text-stone-500">No rep data</p>}
-          </div>
-          {repProductivity.length > 0 && (
-            <div className="border-t border-stone-200 pt-4">
-              <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Rep Productivity (30d)</h3>
-              <div className="space-y-1.5">
-                {repProductivity.map(rp => (
-                  <div key={rp.name} className="flex items-center justify-between text-xs">
-                    <span className="text-stone-500">{rp.name}</span>
-                    <div className="flex gap-3">
-                      <span className="text-nexgen-blue" title="Visit completion">{rp.visitCompletionRate}%</span>
-                      <span className="text-nexgen-blue-dark" title="Conversion">{rp.visitConversionRate}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {showSideColumn && (
+            <div className="flex flex-col gap-4">
+              {MODULE_FIELD_OPS && (
+                <DashCard title="Top reps" caption="Revenue this period · visits over 30 days" action={go('Scheduled Visits') ? { label: 'Visits', onClick: go('Scheduled Visits')! } : undefined}>
+                  <RankedList label="Top reps" items={topReps} emptyMessage="No rep sales in this period" />
+                </DashCard>
+              )}
+              {POInboxStatsTile && (
+                <Suspense fallback={<div className="dash-card h-40 animate-pulse" />}>
+                  <POInboxStatsTile onNavigate={go('PO Inbox')} />
+                </Suspense>
+              )}
             </div>
           )}
         </div>
-        )}
-      </div>
+      </Band>
 
-      {/* E. Product & Customer Intelligence */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="glass-card rounded-xl p-5">
-          <HorizontalBarChart title="Top Selling Products" data={topProducts} />
-        </div>
-        <div className="glass-card rounded-xl p-5">
-          <h3 className="font-bold text-stone-900 text-lg mb-3">Top Customers</h3>
-          {topCustomers.length > 0 ? (
-            <ul className="space-y-2.5">
-              {topCustomers.map((c, i) => (
-                <li key={i} className="flex items-center justify-between">
-                  <span className="text-sm text-stone-700">{c.name}</span>
-                  <span className="text-sm font-semibold text-nexgen-blue">{c.value}</span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-sm text-stone-500">No customer data</p>}
-
-          <div className="border-t border-stone-200 mt-4 pt-4">
-            <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Customer Segments</h4>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(segmentDistribution).map(([seg, count]) => (
-                <div key={seg} className="flex items-center gap-1.5">
-                  <SegmentBadge segment={seg as any} />
-                  <span className="text-xs text-stone-500">{count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* F. Promotional ROI */}
-      {MODULE_PROMOTIONS && promoROI.length > 0 && (
-        <ExpandableSection title="Promotional ROI" defaultExpanded>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-stone-500 text-xs uppercase tracking-wider">
-                  <th className="pb-3 pr-4">Promotion</th>
-                  <th className="pb-3 pr-4">Type</th>
-                  <th className="pb-3 pr-4 text-right">Orders</th>
-                  <th className="pb-3 pr-4 text-right">Discount Given</th>
-                  <th className="pb-3 pr-4 text-right">Revenue</th>
-                  <th className="pb-3 text-right">Uplift</th>
-                </tr>
-              </thead>
-              <tbody>
-                {promoROI.map(roi => (
-                  <tr key={roi.promotionId} className="border-t border-stone-100">
-                    <td className="py-2.5 pr-4 text-stone-700 font-medium">{roi.promotionName}</td>
-                    <td className="py-2.5 pr-4">
-                      <span className="px-2 py-0.5 rounded-full bg-nexgen-blue/10 text-nexgen-blue text-xs capitalize">{roi.type}</span>
-                    </td>
-                    <td className="py-2.5 pr-4 text-right text-stone-600">{roi.ordersUsing}</td>
-                    <td className="py-2.5 pr-4 text-right text-red-600">${roi.totalDiscountGiven.toFixed(2)}</td>
-                    <td className="py-2.5 pr-4 text-right text-emerald-600">${roi.revenueFromPromoOrders.toFixed(2)}</td>
-                    <td className="py-2.5 text-right">
-                      {roi.estimatedUplift === null ? (
-                        <span className="text-stone-500">—</span>
-                      ) : (
-                        <span className={`font-semibold ${roi.estimatedUplift >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {roi.estimatedUplift >= 0 ? '+' : ''}{roi.estimatedUplift}%
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ExpandableSection>
-      )}
-
-      {/* G. Sales Targets */}
-      {MODULE_FIELD_OPS && currentUser && onUpdateSalesTargets && (
-        <ExpandableSection title="Sales Targets" defaultExpanded={myTargets.length > 0}>
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-sm font-semibold text-stone-900">My Targets</h4>
-            <button onClick={() => setShowTargetModal(true)}
-              className="text-xs font-medium text-nexgen-blue hover:text-nexgen-blue-dark flex items-center gap-1 cursor-pointer">
-              <Target className="w-3.5 h-3.5" />
-              {myTargets.length > 0 ? 'Edit' : 'Set Targets'}
-            </button>
-          </div>
-          {myTargets.length > 0 ? (
-            <div className="space-y-3">
-              {myTargets.map(target => {
-                // Was ~25 lines re-deriving attainment for each of the three
-                // target types, with its own 'T23:59:59' window bound. The
-                // registry composes the same three metrics over the window the
-                // target itself describes.
-                const { achieved, percent } = computeTargetProgress(
-                  { ...target, userId: currentUser.id },
-                  metricCtx,
-                );
-                const labelMap = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
-                const formatVal = target.type === 'revenue' ? `$${achieved.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(achieved);
-                const formatTarget = target.type === 'revenue' ? `$${target.targetValue.toLocaleString()}` : String(target.targetValue);
-
-                const barColor = percent >= 60 ? 'bg-emerald-500' : percent >= 30 ? 'bg-amber-500' : 'bg-red-500';
-
-                return (
-                  <div key={target.id} className="bg-stone-50 rounded-lg p-3 border border-stone-200">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-medium text-stone-900">{labelMap[target.type]}</span>
-                      <span className="text-xs text-stone-500">{formatVal} / {formatTarget}</span>
-                    </div>
-                    <div className="w-full bg-stone-200 rounded-full h-2">
-                      <div className={`h-2 rounded-full ${barColor} transition-all`} style={{ width: `${percent}%` }} />
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span className="text-xs text-stone-500">
-                        {new Date(target.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(target.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </span>
-                      <span className={`text-xs font-semibold ${percent >= 60 ? 'text-emerald-600' : percent >= 30 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {percent.toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-stone-500">No targets set. Click &quot;Set Targets&quot; to get started.</p>
-          )}
-        </ExpandableSection>
-      )}
-
-      {MODULE_FIELD_OPS && showTargetModal && onUpdateSalesTargets && (
-        <SalesTargetModal
-          currentUser={currentUser}
-          salesTargets={salesTargets}
+      <Band label="Inventory & dispatch">
+        <InventoryDispatchSection
           allOrders={allOrders}
+          products={products}
+          lowStockThreshold={lowStockThreshold}
+          onOpenStock={go('Stock')}
+          onOpenOrders={openOrders}
+        />
+      </Band>
+
+      <Band label="Breakdown">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <DashCard title="Top selling products" caption="Units this period" action={toProductsTab ? { label: 'Products', onClick: toProductsTab } : undefined}>
+            <RankedList label="Top selling products" items={topProducts} emptyMessage="No sales in this period" />
+          </DashCard>
+          <DashCard
+            title="Top customers"
+            caption="Revenue this period"
+            action={toHoReCaTab ? { label: 'Customers', onClick: toHoReCaTab } : undefined}
+            footer={
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="text-xs text-stone-500">Segments</span>
+                {SEGMENT_ORDER.map(seg => (
+                  <span key={seg} className="inline-flex items-center gap-1.5">
+                    <SegmentBadge segment={seg} />
+                    <span className="text-xs font-semibold tabular-nums text-stone-700">{segmentCounts[seg] ?? 0}</span>
+                  </span>
+                ))}
+                {go('HoReCa Insights') && (
+                  <button type="button" onClick={go('HoReCa Insights')}
+                    className="ml-auto text-xs font-semibold text-nexgen-blue-dark hover:underline cursor-pointer touch-target-y">
+                    Insights →
+                  </button>
+                )}
+              </div>
+            }
+          >
+            <RankedList label="Top customers" items={topCustomers} emptyMessage="No customer orders in this period" />
+          </DashCard>
+        </div>
+      </Band>
+
+      {showPrograms && (
+        <Band label="Programs">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {MODULE_PROMOTIONS && topPromos.length > 0 && (
+              <DashCard title="Promotions" caption="Top 3 by revenue" action={go('Promotions') ? { label: 'View all', onClick: go('Promotions')! } : undefined}>
+                <ul className="divide-y divide-stone-100">
+                  {topPromos.map(roi => (
+                    <li key={roi.promotionId} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-stone-800">{roi.promotionName}</span>
+                        <span className="block text-xs text-stone-500">
+                          {roi.ordersUsing} {roi.ordersUsing === 1 ? 'order' : 'orders'} · {formatMoney(roi.totalDiscountGiven, { cents: false })} discount
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-sm font-semibold tabular-nums text-stone-900">{formatMoney(roi.revenueFromPromoOrders, { cents: false })}</span>
+                        {roi.estimatedUplift !== null && (
+                          <span className={`block text-xs font-semibold tabular-nums ${roi.estimatedUplift >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {roi.estimatedUplift >= 0 ? '+' : ''}{roi.estimatedUplift}% uplift
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </DashCard>
+            )}
+
+            {MODULE_FIELD_OPS && onUpdateSalesTargets && (
+              <DashCard
+                title="My targets"
+                action={{ label: myTargets.length > 0 ? 'Edit' : 'Set targets', onClick: () => setShowTargetModal(true) }}
+              >
+                {myTargets.length > 0 ? (
+                  <div className="space-y-4">
+                    {myTargets.map(target => {
+                      const { achieved, percent } = computeTargetProgress({ ...target, userId: currentUser.id }, metricCtx);
+                      const labelMap = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
+                      const fmt = (n: number) => (target.type === 'revenue' ? formatMoney(n, { cents: false }) : formatCount(n));
+                      return (
+                        <React.Fragment key={target.id}>
+                          <TargetBar
+                            label={labelMap[target.type]}
+                            achieved={fmt(achieved)}
+                            target={fmt(target.targetValue)}
+                            percent={percent}
+                            startDate={target.startDate}
+                            endDate={target.endDate}
+                          />
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState icon={Target} message="No targets set" action={{ label: 'Set targets', onClick: () => setShowTargetModal(true) }} />
+                )}
+              </DashCard>
+            )}
+          </div>
+        </Band>
+      )}
+
+      {SalesTargetModal && showTargetModal && onUpdateSalesTargets && (
+        // NX-0041: these are the props SalesTargetModal actually takes.
+        <SalesTargetModal
+          isOpen={showTargetModal}
+          existingTargets={salesTargets}
+          userId={currentUser.id}
           onSave={(targets) => { onUpdateSalesTargets(targets); setShowTargetModal(false); }}
           onClose={() => setShowTargetModal(false)}
         />

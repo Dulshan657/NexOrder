@@ -6,11 +6,12 @@
 import type { ReactNode } from 'react'
 import type { LayoutPlacement, PickRouteStop, PutawayLineRecommendation, SlottingSuggestion } from '@/types'
 import { placementCenter } from './WarehouseCanvas'
+import { screenFont } from './mapLabels'
+import { routeOverlay2d } from '@/lib/warehouseRoute2d'
 
 type PlacementLookup = Map<number, LayoutPlacement>
 
 const VIOLET = '#8b5cf6'
-const EMERALD = '#059669'
 const BLUE = '#2563eb'
 
 /** Suggested re-slotting moves: from (solid) → to (dashed) with an arrow + qty. */
@@ -61,47 +62,50 @@ export function slottingArrows(
   )
 }
 
-/** Dry-run pick route: a dashed poly through stops in sequence, numbered circles.
- * Straight stop-to-stop (distances are exact; geometry is approximate — the engine
- * returns the stop order + leg metres, not the literal walk path). */
+/** Fuchsia, as in 3D: clear of the rack fills (emerald/violet/amber/red), the
+ *  zone tints and the selection blue. Emerald was the old colour, and on MAIN's
+ *  emerald fast-mover racks a stop simply disappeared. */
+const ROUTE_LINE = '#c026d3' // fuchsia-600
+const ROUTE_MARK = '#a21caf' // fuchsia-700
+
+/**
+ * Dry-run pick route (NX-0037): the walk the engine measured — from the dock,
+ * along the aisles, into each bay — not straight stop-to-stop lines through the
+ * racks. Geometry is `routeOverlay2d` (pure, tested); this only draws it. Line,
+ * markers and text are counter-scaled by `scale`, so they keep one size on screen
+ * at every zoom instead of shrinking to a 7 px dot at the map's default 41 %.
+ */
 export function routePath(
   cell: number,
+  scale: number,
   stops: PickRouteStop[],
   placements: PlacementLookup,
   floor: number,
 ): ReactNode {
-  const points = stops
-    .map((s) => ({ stop: s, p: placements.get(s.locationId) }))
-    .filter((e): e is { stop: PickRouteStop; p: LayoutPlacement } => e.p != null && e.p.floor === floor)
-    .map(({ stop, p }) => ({ stop, ...placementCenter(p) }))
-
-  if (points.length === 0) return null
+  const route = routeOverlay2d(stops, placements, floor)
+  if (route.markers.length === 0 && route.legs.length === 0) return null
+  const u = (px: number) => screenFont(px, scale)
+  const pts = (leg: [number, number][]) => leg.map(([x, y]) => `${x * cell},${y * cell}`).join(' ')
   return (
     <g pointerEvents="none">
-      {/* Connect + label only pairs adjacent in the FULL sequence — an off-floor
-          stop between two on-floor stops must not draw a phantom direct leg. */}
-      {points.map((pt, i) => {
-        if (i === 0) return null
-        const prev = points[i - 1]
-        const consecutive = pt.stop.sequence === prev.stop.sequence + 1
-        if (!consecutive) return null
-        return (
-          <g key={`leg${pt.stop.sequence}`}>
-            <line x1={prev.cx * cell} y1={prev.cy * cell} x2={pt.cx * cell} y2={pt.cy * cell}
-              stroke={EMERALD} strokeWidth={2} pathLength={1} className="wh-route-leg"
-              style={{ animationDelay: `${pt.stop.sequence * 120}ms` }} />
-            <text x={((prev.cx + pt.cx) / 2) * cell} y={((prev.cy + pt.cy) / 2) * cell - 3}
-              textAnchor="middle" fontSize={8} fill="#047857" fontFamily="monospace">
-              +{pt.stop.legDistanceM.toFixed(1)}m
-            </text>
-          </g>
-        )
-      })}
-      {points.map((pt) => (
-        <g key={`${pt.stop.locationId}-${pt.stop.sequence}`}>
-          <circle cx={pt.cx * cell} cy={pt.cy * cell} r={8} fill={EMERALD} opacity={0.9} />
-          <text x={pt.cx * cell} y={pt.cy * cell + 3} textAnchor="middle" fontSize={9} fill="#fff" fontFamily="monospace">
-            {pt.stop.sequence}
+      {route.legs.map((leg, i) => (
+        <g key={`leg${i}`}>
+          {/* White casing: the line reads over any fill beneath it. */}
+          <polyline points={pts(leg)} fill="none" stroke="#fff" strokeWidth={u(7)} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={pts(leg)} fill="none" stroke={ROUTE_LINE} strokeWidth={u(4)} strokeLinejoin="round" strokeLinecap="round" />
+        </g>
+      ))}
+      {route.start && (
+        <g transform={`translate(${route.start[0] * cell},${route.start[1] * cell})`}>
+          <rect x={-u(22)} y={-u(9)} width={u(44)} height={u(18)} rx={u(9)} fill="#1c1917" stroke="#fff" strokeWidth={u(2)} />
+          <text y={u(3.5)} textAnchor="middle" fontSize={u(10)} fontWeight={700} fill="#fff">START</text>
+        </g>
+      )}
+      {route.markers.map((m) => (
+        <g key={`stop${m.locationId}`} transform={`translate(${m.x * cell},${m.y * cell})`}>
+          <circle r={u(11)} fill={ROUTE_MARK} stroke="#fff" strokeWidth={u(2)} />
+          <text y={u(4)} textAnchor="middle" fontSize={u(m.label.length > 2 ? 9 : 11)} fontWeight={700} fill="#fff" fontFamily="monospace">
+            {m.label}
           </text>
         </g>
       ))}
@@ -143,4 +147,47 @@ export function putawayMarkers(
     )
   }
   return <g>{parts}</g>
+}
+
+const AMBER = '#d97706' // amber-600: distinct from the blue putaway target and the route line
+
+/**
+ * Every place holding a found product (NX-0039 "Find a product"), outlined on
+ * the floor being viewed. A place with no placement (the warehouse root — stock
+ * still on the dock) has nothing to outline and is skipped. The stroke is held
+ * at a constant on-screen width, like the route, so it reads at every zoom.
+ */
+export function holdingMarkers(
+  cell: number,
+  scale: number,
+  locationIds: readonly number[],
+  placements: PlacementLookup,
+  floor: number,
+): ReactNode {
+  const s = scale > 0 ? scale : 1
+  const stroke = 3 / s
+  const pad = 1.5 / s
+  return (
+    <g pointerEvents="none">
+      {locationIds.map((id) => {
+        const p = placements.get(id)
+        if (!p || p.floor !== floor) return null
+        return (
+          <rect
+            key={id}
+            data-holding={id}
+            x={p.x * cell - pad}
+            y={p.y * cell - pad}
+            width={p.w * cell + pad * 2}
+            height={p.h * cell + pad * 2}
+            rx={3 / s}
+            fill={AMBER}
+            fillOpacity={0.18}
+            stroke={AMBER}
+            strokeWidth={stroke}
+          />
+        )
+      })}
+    </g>
+  )
 }

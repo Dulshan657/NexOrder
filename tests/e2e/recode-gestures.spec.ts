@@ -68,12 +68,12 @@ async function drag(page: Page, from: Point, to: Point, opts: { button?: 'left' 
   await page.waitForTimeout(150)
 }
 
-const panelOf = (page: Page) => page.locator('aside[aria-label="Recode bins"]')
+const panelOf = (page: Page) => page.locator('aside[aria-label="Recode locations"]')
 
 /** The panel's own count — the app's answer to "what did that drag mean". */
 async function selectedCount(page: Page): Promise<number> {
   const text = await panelOf(page).innerText()
-  return Number(/(\d+)\s*\n?\s*bins? selected/.exec(text)?.[1] ?? NaN)
+  return Number(/(\d+)\s*\n?\s*locations? selected/.exec(text)?.[1] ?? NaN)
 }
 
 async function sceneTransform(page: Page): Promise<string | null> {
@@ -89,7 +89,7 @@ test.describe('recode sweep gestures', () => {
     const stage = page.getByRole('application', { name: /warehouse floor plan/i })
     await stage.waitFor({ state: 'visible', timeout: 25_000 })
     await page.waitForTimeout(2_000) // let the layout finish fitting
-    await page.getByRole('button', { name: 'Recode bins' }).click()
+    await page.getByRole('button', { name: 'Recode locations' }).click()
     await expect(panelOf(page)).toBeVisible()
     await stage.scrollIntoViewIfNeeded()
     await page.waitForTimeout(400)
@@ -114,7 +114,7 @@ test.describe('recode sweep gestures', () => {
     // staying exactly as it was is correct — preventing a new selection is the job,
     // not clearing somebody else's.
     await page.evaluate(() => {
-      const el = document.querySelector('aside[aria-label="Recode bins"] h2')
+      const el = document.querySelector('aside[aria-label="Recode locations"] h2')
       if (!el) return
       const range = document.createRange()
       range.selectNodeContents(el)
@@ -123,7 +123,7 @@ test.describe('recode sweep gestures', () => {
       sel?.addRange(range)
     })
     const before = await page.evaluate(() => window.getSelection()?.toString() ?? '')
-    expect(before).toBe('Recode bins')
+    expect(before).toBe('Recode locations')
 
     await drag(page, racks[0], racks[racks.length - 1], { steps: 30 })
 
@@ -231,7 +231,7 @@ test.describe('recode sweep gestures', () => {
     await panel.getByRole('button', { name: /Step 4, Review/ }).click()
 
     await expect(panel.getByText('Nothing to check yet')).toBeVisible({ timeout: 5_000 })
-    await expect(panel.getByText(/Paint some bins on the map first/)).toBeVisible()
+    await expect(panel.getByText(/Paint some locations on the map first/)).toBeVisible()
     await expect(panel.locator('[aria-busy="true"]')).toHaveCount(0)
   })
 })

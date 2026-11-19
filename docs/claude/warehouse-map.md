@@ -175,4 +175,20 @@ area rename and sign edit while it is up, and `canToggle3d` is true only in `vie
   "holding" is **on hand, allocated included** — reserved stock is on the shelf.
   The bar reports placed locations, those on another floor, and units **not in a
   rack** (warehouse root / staging) separately, because those cannot light up.
-- Next (separate PR): pick-route paths.
+- **Pick routes** (NX-0037): choosing an order in "Ask the engine" while in 3D draws
+  its walk ALONG THE AISLES — dock → each stop in sequence, a riser up to the rack
+  level, a numbered marker. `recommend-pick-route` now returns each stop's
+  `path` (corner grid cells) from `legPaths` over `dijkstraWithPaths`, the same
+  Dijkstra the sequencer measured with (`dijkstra` delegates to it), so the drawn
+  walk IS the measured one. `path` is optional both ways: an older function gives
+  a straight leg (`lib/warehouse3d/routeScene.ts`). Each floor draws only its own
+  runs of a lift leg. **The 2D map draws the same walk** (`lib/warehouseRoute2d.ts`,
+  rendered by `routePath` in `warehouseMarkers.tsx`), counter-scaled through
+  `renderOverlay(cell, scale)` so line and markers keep one on-screen size at
+  every zoom. **Route colour is fuchsia in both views — never emerald**: emerald
+  is the fast-mover rack fill, and a stop drawn on one was invisible. In 3D, area
+  names fade (`areaLabelItems(…, { muted })`) while a route is shown, because the
+  labels are DOM over the canvas and "Inbound staging" hid the first leg; the
+  Start pill is `anchor: 'above'` so it does not cover stop 1. Dev's demo order
+  for this is `ORD-1794572122642` (ADAIRS, Main Warehouse, 6 stops incl. the cold
+  room) — placed through `place-order`, so picking or cancelling it consumes it.

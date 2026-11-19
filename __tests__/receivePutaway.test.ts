@@ -78,7 +78,7 @@ describe('putawayForReceipt', () => {
     })
     expect(outcome).toEqual({
       putaway: null,
-      putaway_error: 'Home bin unavailable, try again.',
+      putaway_error: 'Home location unavailable, try again.',
       putaway_lines: LINES,
     })
   })
@@ -111,7 +111,7 @@ describe('receiveStockBody', () => {
       ok: true,
       result: RECEIPT,
       putaway: null,
-      putaway_error: 'Home bin unavailable, try again.',
+      putaway_error: 'Home location unavailable, try again.',
       putaway_lines: LINES,
     })
   })
@@ -139,7 +139,7 @@ describe('receive-stock with an unreadable home bin', () => {
       ok: true,
       result: RECEIPT,
       putaway: null,
-      putaway_error: 'Home bin unavailable, try again.',
+      putaway_error: 'Home location unavailable, try again.',
       // Exactly what was tried, so a Retry sends the same plates and hold flags.
       putaway_lines: LINES,
     })

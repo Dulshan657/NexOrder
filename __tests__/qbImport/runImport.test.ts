@@ -325,7 +325,7 @@ describe('runImport', () => {
       { storedImports: [storedFor()] },
       {
         updateInvoice: vi.fn(async () => {
-          throw new Error('QB_ALLOCATION_MISMATCH: order QB-INV-1 nets 3 of product 11 at location 2 but the bin holds 1 with 0 held by other orders')
+          throw new Error('QB_ALLOCATION_MISMATCH: order QB-INV-1 nets 3 of product 11 at location 2 but the location holds 1 with 0 held by other orders')
         }),
       },
     )

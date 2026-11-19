@@ -127,7 +127,7 @@ export interface ApplyBlockArgs {
 export function applyBlock(args: ApplyBlockArgs): ApplyBlock | null {
   if (args.applying) return { reason: 'Applying…', tone: 'busy', step: null }
   if (args.selectedCount === 0) {
-    return { reason: 'Paint some bins on the map', tone: 'todo', step: 1 }
+    return { reason: 'Paint some locations on the map', tone: 'todo', step: 1 }
   }
   if (!args.block.trim()) return { reason: 'Give the block a name', tone: 'todo', step: 2 }
   if (args.previewing) return { reason: 'Checking the new codes…', tone: 'busy', step: null }
@@ -200,7 +200,7 @@ export function RecodePanel(props: RecodePanelProps) {
 
   return (
     <aside
-      aria-label="Recode bins"
+      aria-label="Recode locations"
       className={
         'rc-panel-in flex min-h-0 flex-col overflow-hidden border border-stone-200/80 shadow-elevated ' +
         // Mobile: a sheet docked to the bottom of the viewport. `sticky`, never
@@ -228,7 +228,7 @@ export function RecodePanel(props: RecodePanelProps) {
       <header className="flex shrink-0 items-start gap-3 px-4 pb-3 pt-1 lg:pt-3">
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-[15px] font-semibold leading-tight tracking-tight text-stone-900">
-            Recode bins
+            Recode locations
           </h2>
           {/* Standing site context — true on all four steps, so it belongs to the
               panel and not to step 1, where it used to compete with the selection

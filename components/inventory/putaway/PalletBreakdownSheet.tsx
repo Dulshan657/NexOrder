@@ -255,7 +255,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
       locationId: p.locationId,
     }))
     if (rows.some((r) => r.baseQty <= 0)) {
-      setError('Every portion needs a quantity before the engine can suggest a bin.')
+      setError('Every portion needs a quantity before the engine can suggest a location.')
       return
     }
     try {
@@ -276,7 +276,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
         }
       }))
       if (result.mode === 'legacy') {
-        addToast('This site has no published layout — choose the bins yourself', 'info')
+        addToast('This site has no published layout — choose the locations yourself', 'info')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not plan that break-down')
@@ -478,7 +478,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                         {p.locationCode ? (
                           <span className="block text-sm font-mono text-stone-800 truncate">{p.locationCode}</span>
                         ) : (
-                          <span className="block text-sm text-stone-500">Choose a bin</span>
+                          <span className="block text-sm text-stone-500">Choose a location</span>
                         )}
                         {p.suggestedLocationCode && p.suggestedLocationId !== p.locationId && (
                           <span className="block text-[11px] text-stone-500">
@@ -487,7 +487,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                         )}
                         {p.suggested && p.suggestedLocationId == null && (
                           <span className="block text-[11px] text-amber-700">
-                            No bin the engine will offer for this — pick one yourself.
+                            No location the engine will offer for this — pick one yourself.
                           </span>
                         )}
                       </span>
@@ -511,7 +511,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                   disabled={plan.isPending}
                   className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[44px] text-sm text-stone-600 border border-stone-200 rounded-lg btn-press disabled:opacity-50"
                 >
-                  {plan.isPending ? 'Asking the engine…' : 'Suggest bins'}
+                  {plan.isPending ? 'Asking the engine…' : 'Suggest locations'}
                 </button>
               </div>
 
@@ -572,7 +572,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
 
               <p className="text-xs text-stone-500">
                 These plates now hold the stock, but nothing has moved yet — each one is a stop on
-                this walk. Label them before you carry them, or the bin scan at the stop will have
+                this walk. Label them before you carry them, or the location scan at the stop will have
                 nothing to check against.
               </p>
 

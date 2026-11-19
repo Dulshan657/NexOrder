@@ -107,7 +107,7 @@ export async function loadHomeBinHealth(
   warehouseId: number,
 ): Promise<HomeBinHealthReport> {
   const { data, error } = await admin.rpc('wie_home_bin_facts', { p_warehouse_id: warehouseId })
-  if (error) throw new Error(`home bin facts load failed: ${error.message}`)
+  if (error) throw new Error(`home location facts load failed: ${error.message}`)
 
   const facts = ((data ?? []) as HomeBinFactsRow[]).map((row) => homeBinFactsFromRow(row, warehouseId))
   return homeBinReport(warehouseId, await withSlottingRefusals(admin, warehouseId, facts))
@@ -131,7 +131,7 @@ async function loadCandidates(
   if (binId !== undefined) args.p_bin_id = binId
   if (excludeRecIds.length > 0) args.p_exclude_rec_ids = [...excludeRecIds]
   const { data, error } = await admin.rpc('wie_home_bin_candidate_facts', args)
-  if (error) throw new Error(`home bin candidates load failed: ${error.message}`)
+  if (error) throw new Error(`home location candidates load failed: ${error.message}`)
 
   const facts = ((data ?? []) as HomeBinCandidateFactsRow[])
     .map((row) => homeBinCandidateFactsFromRow(row, warehouseId))
@@ -168,6 +168,6 @@ export async function loadHomeChoiceRefusal(
 ): Promise<string | null> {
   const [facts] = await loadCandidates(admin, warehouseId, productId, binId, excludeRecIds)
   // No row: the id is not a bin under this warehouse (a rack, a zone, another site).
-  if (!facts) return 'That location is not a bin in this warehouse.'
+  if (!facts) return 'That is not a storage location in this warehouse.'
   return homeChoiceRefusal(facts)
 }

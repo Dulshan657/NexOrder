@@ -117,7 +117,7 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError(
         'CONFLICT',
         (rec as any).status === 'suggested'
-          ? 'That line has not been assigned to a bin yet'
+          ? 'That line has not been assigned to a location yet'
           : `This task was already ${(rec as any).status} — someone else may have moved it`,
       )
     }
@@ -219,14 +219,14 @@ serve(async (req: Request) => {
     const locationIds = [...new Set(planned.map((p) => p.locationId as number))]
     const { data: binRows, error: binErr } = await admin.from('locations')
       .select('id, code, is_active, level_role').in('id', locationIds)
-    if (binErr) throw new EdgeFunctionError('INTERNAL', `bin lookup failed: ${binErr.message}`)
+    if (binErr) throw new EdgeFunctionError('INTERNAL', `location lookup failed: ${binErr.message}`)
     const binById = new Map(((binRows ?? []) as any[]).map((b) => [b.id, b]))
 
     for (const id of locationIds) {
       const bin = binById.get(id)
-      if (!bin) throw new EdgeFunctionError('NOT_FOUND', `Bin ${id} not found`)
+      if (!bin) throw new EdgeFunctionError('NOT_FOUND', `Location ${id} not found`)
       if (!bin.is_active) {
-        throw new EdgeFunctionError('CONFLICT', `${bin.code} is no longer active — choose another bin`)
+        throw new EdgeFunctionError('CONFLICT', `${bin.code} is no longer active — choose another location`)
       }
       const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: id })
       if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
@@ -260,7 +260,7 @@ serve(async (req: Request) => {
         'CONFLICT',
         `${roleMismatches.map((m) => `${m.binCode} is a ${m.levelRole} level`).join(', ')}; ` +
           `${sku} is only allowed on ${allowedRolesForSku!.join('/')} levels. ` +
-          'Choose different bins, or confirm "Place anyway".',
+          'Choose different locations, or confirm "Place anyway".',
         // A stable marker, not prose: the sheet keys its override affordance off
         // this rather than sniffing the message, so rewording the sentence can
         // never silently remove the operator's only way past a wedged level.

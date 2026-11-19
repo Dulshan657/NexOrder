@@ -343,10 +343,10 @@ describe('homeChoiceRefusal', () => {
   it("names the other product's home first, then the first problem, else null", () => {
     // Another product's home wins over any other problem the bin has.
     expect(homeChoiceRefusal(candidate({ isActive: false, otherHomeSkus: ['TST-WALK-900', 'TST-WALK-901'] })))
-      .toBe('TST-WALK-B1 is the home bin of TST-WALK-900; choose another bin.')
+      .toBe('TST-WALK-B1 is the home location of TST-WALK-900; choose another location.')
     // Otherwise the first problem, in homeBinProblems' fixed order.
     expect(homeChoiceRefusal(candidate({ isActive: false, capacitySlots: 10, usedSlots: 10 })))
-      .toBe('Bin TST-WALK-B1 is inactive, so putaway never offers it.')
+      .toBe('Location TST-WALK-B1 is inactive, so putaway never offers it.')
     // A healthy bin that is nobody's home has no refusal.
     expect(homeChoiceRefusal(candidate())).toBeNull()
   })

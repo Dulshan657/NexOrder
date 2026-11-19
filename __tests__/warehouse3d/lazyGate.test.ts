@@ -59,7 +59,10 @@ describe('3D lazy gate', () => {
     // CameraControls, Html and Line need no CDN, worker or eval. Text/Text3D
     // (troika), Environment presets (CDN HDRI), useGLTF/Draco/KTX2 (CDN
     // decoders) would all break under script-src 'self'.
-    const ALLOWED = new Set(['CameraControls', 'Html', 'Line'])
+    // `Html` was allowed until NX-0037: its separate React root made React's
+    // commit throw `removeChild` when the 3D view unmounted (switching warehouse
+    // in 3D), blanking the map. Labels are ScreenLabels' plain DOM overlay now.
+    const ALLOWED = new Set(['CameraControls', 'Line'])
     const seen: string[] = []
     for (const { file, src } of threeSources()) {
       for (const m of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+'@react-three\/drei'/g)) {
