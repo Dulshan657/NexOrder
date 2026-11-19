@@ -65,11 +65,12 @@ reps the same calm, consistent, actionable page.
 |---|---|---|---|
 | A1 | claimed | `RepDashboard > KPI deltas compare this period with the previous one` (prev month 2×$100, this month $300 → $300.00, +50.0%; the old half-split said +300% on all-time $500), `RepDashboard > offers the same period picker as Admin` | |
 | A2 | claimed | `RepDashboard > visit completion follows the period` (this period 2/2 visited, previous 1/2 → 100%, +50.0 pts) | Added after check:brief flagged A2 as unproved |
-| A3 | not-claimed | deployed to dev as `8b697c0` (previous dev build + this branch), health 200 | Waiting on the owner's walk as a Field Rep and an Office Rep — the assistant may not sign in to the app on this host |
+| A3 | not-claimed | Field Rep view walked on dev (layout order as specified) | Office Rep view not yet walked |
 | A4 | claimed | `RepDashboard > a top customer row starts an order`, `RepDashboard > a low-stock row opens Stock`, `repDashNav > withholds a view the rep cannot open`, `RepDashboard without the shop module > offers no start-order link` | The gate found start-order links reaching a blank page on a build without the shop module (Amadiya); fixed in `repCanStartOrder`. Reorder, at-risk, accounts and visits links are wired the same way but not each unit-tested |
 | A5 | claimed | `RepDashboard > every card title shares one style`; trend is the shared `SalesLineChart` with `previous`; `dailySeries` uses `appDateKeysBetween` | |
 | A6 | claimed | rankings are memoised on the period's metric rows; every date goes through `'en-AU'` / `formatShortDate` | |
-| A7 | not-claimed | as A3 | Owner walk pending |
+| A7 | not-claimed | Owner signed in as a Field Rep (Charlie Brown) on dev; the assistant walked it: Plan visits → Scheduled Visits, a low-stock row → Stock, an at-risk Visit → check-in modal (cancelled), Revenue → the rep's orders | Office Rep walk still to do |
+| A8 | claimed | `RepDashboard walk fixes > shows only current targets, with ended ones behind Past targets`, `… hides Visit completion from an Office Rep`, `… shows no visit change when nothing was planned` | From the Field Rep walk: six targets incl. ended Oct/Apr ones, a "$1,537 to go" chip off an ended target, and "−86 pts" against 0 planned visits |
 
 Full suite: 463 files / 7058 tests pass. `tsc --noEmit`, `lint`, `check:overlays`, `check:viewport` clean.
 
@@ -77,9 +78,9 @@ Also in this PR, not named in the Approach: `ExpandableSection`, `HorizontalBarC
 
 ### Not claimed
 
-- The page has not been seen as a rep by anyone yet: the assistant cannot sign in on this host, so A3 and A7 wait for the owner.
+- The Office Rep view has not been walked yet; the owner signs in, the assistant cannot.
 - Phone width (360px) not checked in a browser; the `mobile` Playwright project was not run.
 - Colour contrast of the restyled route hero and chips not measured.
 - Dev also carries unmerged NX-0040; the dev check is of that combination.
-- The Visit completion tile still shows to Office Reps, where it reads 0% with no link; left for the owner's walk to decide.
+- `visit completion follows the period` now renders a Field Rep: Visit completion is hidden from Office Reps by A8.
 - Visit completion counts routes the rep created (`createdBy`), not ones a manager assigned to them — existing service behaviour, now in a headline tile.
