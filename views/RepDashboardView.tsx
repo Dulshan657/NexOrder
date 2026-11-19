@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import RepDashboardV2 from '../components/RepDashboardV2';
 import { startScheduledVisit } from '../services/scheduledVisitService';
+import type { RepDashView } from '../lib/repDashNav';
 
 export interface RepDashboardViewProps {
     currentUser: User;
@@ -27,6 +28,8 @@ export interface RepDashboardViewProps {
     onSetVisits: (visits: Visit[]) => void;
     onUpdateRoute: (route: ScheduledVisit) => void;
     onSelectRoute: (scheduledVisitId: string) => void;
+    /** NX-0043: where the dashboard's links lead (gated inside by lib/repDashNav). */
+    onNavigate?: (view: RepDashView) => void;
 }
 
 const RepDashboardView: React.FC<RepDashboardViewProps> = ({
@@ -43,6 +46,7 @@ const RepDashboardView: React.FC<RepDashboardViewProps> = ({
     onSetVisits,
     onUpdateRoute,
     onSelectRoute,
+    onNavigate,
 }) => {
     const handleStartRoute = useCallback(
         (route: ScheduledVisit) => {
@@ -68,6 +72,7 @@ const RepDashboardView: React.FC<RepDashboardViewProps> = ({
             setVisits={onSetVisits}
             onStartRoute={handleStartRoute}
             onViewRoute={onSelectRoute}
+            onNavigate={onNavigate}
         />
     );
 };

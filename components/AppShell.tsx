@@ -1604,6 +1604,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                             setInitialRouteId(scheduledVisitId);
                                             setView('scheduled_visits');
                                         }}
+                                        onNavigate={nextView => setView(nextView)}
                                     />
                                     </Suspense>
                                     </ErrorBoundary>

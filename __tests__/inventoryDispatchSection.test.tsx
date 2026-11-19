@@ -8,8 +8,19 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { Order, OrderStatus } from '@/types'
 
+const setScope = vi.fn()
 vi.mock('@/context/WarehouseScopeContext', () => ({
-  useWarehouseScope: () => ({ scope: 'all', scopeLabel: 'All sites' }),
+  useWarehouseScope: () => ({
+    scope: 'all',
+    scopeLabel: 'All sites',
+    setScope,
+    isPinned: false,
+    canSelectAll: true,
+    activeWarehouses: [
+      { id: 1, name: 'Main', code: 'MAIN', isActive: true },
+      { id: 2, name: 'Cold store', code: 'COLD', isActive: true },
+    ],
+  }),
 }))
 vi.mock('@/hooks/queries/useInventoryBalances', () => ({
   useProductStockByWarehouse: () => ({ data: [] }),
@@ -62,5 +73,26 @@ describe('InventoryDispatchSection', () => {
     expect(screen.queryByText(/cancelled in this period/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '7d' }))
     expect(screen.getByRole('button', { name: '7d' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('offers a warehouse picker in the Stock Health card', () => {
+    render(React.createElement(InventoryDispatchSection, { allOrders: [], products: [] }))
+    const card = screen.getByRole('heading', { name: /stock health/i }).closest('section')!
+    const picker = card.querySelector('select[aria-label="Warehouse scope"]') as HTMLSelectElement
+    expect(picker).toBeTruthy()
+    fireEvent.change(picker, { target: { value: '2' } })
+    expect(setScope).toHaveBeenCalledWith(2)
+  })
+
+  it('a pipeline stage opens the matching order list', () => {
+    const onOpenOrders = vi.fn()
+    const orders = [placed('a', 'processing'), placed('b', 'packed'), placed('c', 'delivered')]
+    render(React.createElement(InventoryDispatchSection, { allOrders: orders, products: [], onOpenOrders }))
+    fireEvent.click(screen.getByRole('button', { name: /^processing: 1/i }))
+    expect(onOpenOrders).toHaveBeenLastCalledWith('received')
+    fireEvent.click(screen.getByRole('button', { name: /^packed: 1/i }))
+    expect(onOpenOrders).toHaveBeenLastCalledWith('inProgress')
+    fireEvent.click(screen.getByRole('button', { name: /^delivered: 1/i }))
+    expect(onOpenOrders).toHaveBeenLastCalledWith('completed')
   })
 })

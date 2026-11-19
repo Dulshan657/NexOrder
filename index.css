@@ -157,6 +157,22 @@ body {
   .glass-card {
     @apply bg-white/70 backdrop-blur-xl border border-stone-200/50 shadow-[0_1px_3px_rgba(120,113,108,0.06),inset_0_1px_0_rgba(255,255,255,0.8)];
   }
+  /* NX-0041 dashboard kit: white on the page, a hairline, a 1px resting shadow.
+     Only cards that lead somewhere lift on hover. No glass, no gradient. */
+  .dash-card {
+    @apply bg-white rounded-xl border border-stone-200/80;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  }
+  .dash-card-interactive {
+    transition: box-shadow 150ms ease-out, border-color 150ms ease-out, transform 150ms ease-out;
+  }
+  .dash-card-interactive:hover {
+    @apply border-stone-300/80;
+    box-shadow: 0 4px 12px rgba(120,113,108,0.1), 0 2px 4px rgba(120,113,108,0.06);
+  }
+  .dash-card-interactive:active {
+    transform: translateY(0.5px);
+  }
   .gradient-card {
     background: linear-gradient(135deg, rgba(41,136,222,0.05) 0%, rgba(255,255,255,0.8) 100%);
   }

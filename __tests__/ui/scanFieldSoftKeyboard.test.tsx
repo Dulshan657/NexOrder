@@ -165,8 +165,13 @@ describe('recognising the scan gun', () => {
     ['RS35', true],
     ['CipherLab RS35', true],
     ['RS36', true],
+    ['RK95', true],
+    ['CipherLab RK95', true],
+    ['RK96', true],
     ['Pixel 7', false],
     ['SM-G991B', false],
+    ['RMX3085', false],
+    ['RK', false],
     ['', false],
   ])('model %j is a gun: %s', (model, expected) => {
     expect(isScanGunModel(model)).toBe(expected)
