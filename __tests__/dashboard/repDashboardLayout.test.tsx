@@ -94,6 +94,22 @@ describe('RepDashboard', () => {
     expect(within(group).getByRole('button', { name: 'This Month' }).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('visit completion follows the period', async () => {
+    const route = (id: string, date: string, arrived: number) => ({
+      id, name: id, date, status: 'completed', createdBy: rep.id, createdAt: date,
+      stops: [0, 1].map((i) => ({ hoReCaId: 3, order: i, status: i < arrived ? 'arrived' : 'pending' })),
+    })
+    renderRep({
+      routes: [
+        route('prev', at(range.previous.from, 1), 1), // 1 of 2 visited
+        route('now', at(range.from, 1), 2), // 2 of 2 visited
+      ],
+    })
+    const tile = (await screen.findByText('Visit completion')).closest('.dash-card') as HTMLElement
+    expect(within(tile).getByText('100%')).toBeTruthy()
+    expect(within(tile).getByText(/\+50\.0 pts/)).toBeTruthy()
+  })
+
   it('a top customer row starts an order', async () => {
     const { onStartOrder } = renderRep()
     const list = await screen.findByRole('list', { name: 'Top customers' })
