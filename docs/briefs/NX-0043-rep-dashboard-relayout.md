@@ -54,3 +54,24 @@ reps the same calm, consistent, actionable page.
   order-numbers e2e spec run) — a follow-up PR.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `RepDashboard > KPI deltas compare this period with the previous one` (prev month 2×$100, this month $300 → $300.00, +50.0%; the old half-split said +300% on all-time $500), `RepDashboard > offers the same period picker as Admin` | |
+| A2 | claimed | `getVisitCompletionRate` is called over `dateRange` and `dateRange.previous` (`components/RepDashboardV2.tsx`) | No dedicated test; covered by reading the code |
+| A3 | not-claimed | deployed to dev as `8b697c0` (previous dev build + this branch), health 200 | Waiting on the owner's walk as a Field Rep and an Office Rep — the assistant may not sign in to the app on this host |
+| A4 | claimed | `RepDashboard > a top customer row starts an order`, `RepDashboard > a low-stock row opens Stock`, `repDashNav > withholds a view the rep cannot open` (+ handler / no-callback cases) | Reorder, at-risk, accounts and visits links are wired the same way but not each unit-tested |
+| A5 | claimed | `RepDashboard > every card title shares one style`; trend is the shared `SalesLineChart` with `previous`; `dailySeries` uses `appDateKeysBetween` | |
+| A6 | claimed | rankings are memoised on the period's metric rows; every date goes through `'en-AU'` / `formatShortDate` | |
+| A7 | not-claimed | as A3 | Owner walk pending |
+
+Full suite: 463 files / 7058 tests pass. `tsc --noEmit`, `lint`, `check:overlays`, `check:viewport` clean.
+
+Also in this PR, not named in the Approach: `ExpandableSection`, `HorizontalBarChart` and `AlertBanner` are deleted — the plan scheduled it for PR 3 once nothing used them, and `git grep` finds no users. `components/AdminDashboard.tsx` now imports the shared `Band` and `dailySeries` instead of its local copies (no behaviour change).
+
+### Not claimed
+
+- The page has not been seen as a rep by anyone yet: the assistant cannot sign in on this host, so A3 and A7 wait for the owner.
+- Phone width (360px) not checked in a browser; the `mobile` Playwright project was not run.
+- Colour contrast of the restyled route hero and chips not measured.
+- Dev also carries unmerged NX-0040; the dev check is of that combination.
