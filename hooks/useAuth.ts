@@ -8,7 +8,6 @@ import { qrReturnUrl } from '@/lib/qr/qrReturnUrl'
 import { queryClient } from '@/lib/queryClient'
 import { reloadPage } from '@/lib/auth/reloadPage'
 import { isAuthLinkUrl } from '@/lib/auth/recoveryLink'
-import { readPendingPasswordSet } from '@/lib/auth/pendingPasswordSet'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 type UserRole = Profile['role']
@@ -191,10 +190,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         queryClient.getMutationCache().clear()
         // The cache is not all the previous person left behind: their cart,
         // pantry, profile and realtime channel live in React state, and only a
-        // reload drops them. Never mid invite/recovery, though — that screen
-        // writes the "password still owed" marker, and a reload could land the
-        // new user in the app without ever setting one.
-        if (!isAuthLinkUrl() && readPendingPasswordSet() === null) reloadPage()
+        // reload drops them. Skipped only while THIS tab is handling an
+        // invite/recovery link: that screen is mid set-password and a reload
+        // would cut it short. A "password owed" marker left by ANOTHER tab is
+        // not a reason to skip — the reloaded page reads it and shows the
+        // set-password screen, which is the safe place to land.
+        if (!isAuthLinkUrl()) reloadPage()
       } else if (previousUserId === null && nextUserId !== null && reloadOnNextSignInRef.current) {
         reloadOnNextSignInRef.current = false
         void queryClient.invalidateQueries()

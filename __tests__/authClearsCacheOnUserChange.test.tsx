@@ -2,6 +2,7 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import { queryClient } from '@/lib/queryClient'
+import { readPendingPasswordSet, writePendingPasswordSet } from '@/lib/auth/pendingPasswordSet'
 
 // NX-0045. Found on dev: after one rep signed out and another signed in in the
 // same tab, the second rep's dashboard held the first rep's 130 orders. Query
@@ -85,6 +86,21 @@ describe('AuthProvider', () => {
       expect(queryClient.getQueryData(ORDERS_KEY)).toBeUndefined()
     } finally {
       window.location.hash = ''
+    }
+  })
+
+  it('still reloads when another tab left a password-owed marker', async () => {
+    // Tab B opened an invite for someone else; this tab only hears the switch.
+    // Reloading is the safe move here: the reloaded page reads the marker and
+    // shows the set-password screen instead of the app.
+    await signedInAs('rep-charlie')
+    writePendingPasswordSet({ userId: 'new-hire', flow: 'invite', issuedAt: Date.now() })
+    expect(readPendingPasswordSet()).not.toBeNull()
+    try {
+      onAuthStateChangeCallback!('SIGNED_IN', session('new-hire'))
+      expect(reloadPage).toHaveBeenCalledTimes(1)
+    } finally {
+      localStorage.clear()
     }
   })
 
