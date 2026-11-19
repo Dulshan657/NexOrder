@@ -419,7 +419,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="min-w-0">
                         <span className="block truncate text-sm text-stone-800">{roi.promotionName}</span>
                         <span className="block text-xs text-stone-500">
-                          {roi.ordersUsing} orders · {formatMoney(roi.totalDiscountGiven, { cents: false })} discount
+                          {roi.ordersUsing} {roi.ordersUsing === 1 ? 'order' : 'orders'} · {formatMoney(roi.totalDiscountGiven, { cents: false })} discount
                         </span>
                       </span>
                       <span className="shrink-0 text-right">
