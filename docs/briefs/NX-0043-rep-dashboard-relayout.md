@@ -21,6 +21,7 @@
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > a top customer row starts an order", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > a low-stock row opens Stock", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashNav.test.ts", "test": "repDashNav > withholds a view the rep cannot open", "proves": ["A4"] },
+    { "file": "__tests__/dashboard/repDashboardShopOff.test.tsx", "test": "RepDashboard without the shop module > offers no start-order link", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > every card title shares one style", "proves": ["A5", "A6"] }
   ],
   "allow": []
