@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import type { User } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { LogOut, Lock, ChevronUp, ChevronDown } from 'lucide-react';
+import { LogOut, Lock, ChevronUp, ChevronDown, CircleHelp } from 'lucide-react';
 import OptimizedImage from '../OptimizedImage';
-import { MODULE_SHOP } from '../../lib/modules';
+import { MODULE_INVENTORY_DISPATCH, MODULE_SHOP } from '../../lib/modules';
+import { helpAudienceForRole } from '../../lib/help/helpAudience';
+import { helpIndexHref } from '../../lib/help/helpRoute';
 import { lockKitchen } from '../../lib/qr/qrSessionEnd';
 import { formatClockTime } from '../../lib/qr/qrPinMessages';
 
@@ -79,6 +81,11 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ currentUser, kitchenSession }
     return <KitchenProfile currentUser={currentUser} session={kitchenSession} />;
   }
 
+  // NX-0038. The only help that exists is the warehouse guide, so the link is
+  // offered only to the roles it is written for, and only where the warehouse
+  // module ships. A new tab, so whatever is half-done on screen survives.
+  const helpAudience = MODULE_INVENTORY_DISPATCH ? helpAudienceForRole(currentUser.role) : null;
+
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
@@ -114,6 +121,17 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ currentUser, kitchenSession }
 
       {isExpanded && (
         <div className="px-3 pb-3">
+          {helpAudience && (
+            <a
+              href={helpIndexHref(helpAudience)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-2 px-3 py-2 touch-target-y rounded-lg text-sm text-stone-700 hover:bg-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue-dark"
+            >
+              <CircleHelp className="w-4 h-4" aria-hidden="true" />
+              Help
+            </a>
+          )}
           <button
             onClick={handleSignOut}
             disabled={isSigningOut}

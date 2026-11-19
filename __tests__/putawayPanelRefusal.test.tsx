@@ -25,7 +25,7 @@ import { PutawayPanel } from '@/components/inventory/PutawayPanel'
 import type { PutawayLineRecommendation } from '@/types'
 
 const HOME_MESSAGE =
-  'Put this in its home bin TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
+  'Put this in its home location TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
 
 function httpError(message: string) {
   const body = JSON.stringify({ error: { code: 'CONFLICT', message } })
@@ -93,8 +93,8 @@ describe('PutawayPanel shows a home refusal', () => {
     invoke.mockResolvedValue({ data: null, error: httpError(HOME_MESSAGE) })
     renderPanel()
 
-    fireEvent.click(screen.getByLabelText('Why this bin?'))
-    fireEvent.change(screen.getByLabelText('Choose another bin'), { target: { value: '716' } })
+    fireEvent.click(screen.getByLabelText('Why this location?'))
+    fireEvent.change(screen.getByLabelText('Choose another location'), { target: { value: '716' } })
     fireEvent.click(screen.getByText('Put here'))
 
     const alert = await screen.findByRole('alert')

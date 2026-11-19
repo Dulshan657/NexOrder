@@ -306,7 +306,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     // task still points at that suggested bin: a desk that assigned it elsewhere
     // made its own call, and the server judges that against the room at the home.
     if (isHomeTask && verdict.placedElsewhere) {
-      setError(`This product's home bin is ${binCode}. Scan ${binCode}.`)
+      setError(`This product's home location is ${binCode}. Scan ${binCode}.`)
       setScannedBin('')
       signalFlash('reject')
       return
@@ -344,7 +344,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         // desk redirect puts the line back on the Assign tab). The card stays on
         // the bin step: whatever the refreshed stop turns out to be, it is
         // scanned from here.
-        const message = e instanceof Error ? e.message : 'Could not confirm the bin, try again.'
+        const message = e instanceof Error ? e.message : 'Could not confirm the location, try again.'
         setError(message)
         setScannedBin('')
         signalFlash('reject')
@@ -466,7 +466,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     ...(identity && identity.expect !== 'none'
       ? [{ key: 'identify' as Step, label: identifyChipLabel(identity), value: plateCode || productCode }]
       : []),
-    { key: 'bin', label: 'Bin', value: scannedBin },
+    { key: 'bin', label: 'Location', value: scannedBin },
     { key: 'qty', label: 'Count', value: step === 'qty' ? qty : '' },
   ]
   const STAGE_ORDER: ReadonlyArray<Step> = ['identify', 'bin', 'qty']
@@ -505,7 +505,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           the walk would otherwise fail only after the walk. */}
       {shownBin.isActive === false && (
         <Callout tone="warning" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
-          This bin has been retired from the layout. Send the line back to the
+          This location has been retired from the layout. Send the line back to the
           Assign queue and re-run it so the engine picks a live bay.
         </Callout>
       )}
@@ -630,20 +630,20 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       {step === 'bin' && (
         <div className="step-advance">
           <ScanField
-            label={homeCopy?.scanLabel ?? (awaitingConfirm ? confirmCopy.scanLabel : `Scan the bin — expecting ${binCode}`)}
+            label={homeCopy?.scanLabel ?? (awaitingConfirm ? confirmCopy.scanLabel : `Scan the location — expecting ${binCode}`)}
             value={scannedBin}
             onChange={setScannedBin}
             onScan={onBinScan}
             flash={step === 'bin' ? flash : null}
             placeholder={binCode}
-            cameraTitle="Scan the bin label"
+            cameraTitle="Scan the location label"
             autoFocus
             helper={homeCopy
               ? undefined
               : awaitingConfirm
                 ? confirmCopy.helper
                 : isHomeTask
-                  ? "This product's home bin. It goes here while the home has room."
+                  ? "This product's home location. It goes here while the home has room."
                   : 'A different bay is fine — it gets recorded.'}
             error={error ?? undefined}
           />

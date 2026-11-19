@@ -489,7 +489,7 @@ serve(async (req: Request) => {
     }
     if (destination == null) {
       throw new EdgeFunctionError('CONFLICT',
-        'This product has no assigned block any more — the rule may have changed. Dismiss the task, or scan a bin.')
+        'This product has no assigned block any more — the rule may have changed. Dismiss the task, or scan a location.')
     }
 
     const { data: result, error: txErr } = await admin.rpc('wie_accept_offhome_tx', {
@@ -506,7 +506,7 @@ serve(async (req: Request) => {
       // quantity or leave it.
       if (msg.includes('INSUFFICIENT_STOCK')) {
         throw new EdgeFunctionError('CONFLICT',
-          'Not enough free stock left in that bin — some of it was reserved for an order after this task was raised. '
+          'Not enough free stock left in that location — some of it was reserved for an order after this task was raised. '
           + 'Reduce the quantity, or dismiss the task.',
           { reason: 'insufficient_stock' })
       }

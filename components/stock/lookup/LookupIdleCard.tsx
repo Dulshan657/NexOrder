@@ -13,11 +13,11 @@ const PROMPTS = [
   {
     icon: Barcode,
     title: 'A product barcode',
-    body: 'How many are on site, and which bins hold them.',
+    body: 'How many are on site, and which locations hold them.',
   },
   {
     icon: MapPin,
-    title: 'A bin label',
+    title: 'A location label',
     body: 'Everything sitting in that location, lot by lot.',
   },
   {

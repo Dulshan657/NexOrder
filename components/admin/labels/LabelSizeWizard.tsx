@@ -37,7 +37,7 @@ import type { SheetGroup } from '@/supabase/functions/_shared/labels/layoutLabel
 const SUBJECTS: Array<{ group: SheetGroup; label: string; helper: string }> = [
   {
     group: 'slots',
-    label: 'Bins and rack levels',
+    label: 'Locations and rack levels',
     helper: 'The places putaway and picking send people to. Much the largest number of labels.',
   },
   {

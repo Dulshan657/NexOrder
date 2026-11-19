@@ -116,9 +116,9 @@ describe('putaway walk card — overflow awaiting confirmation', () => {
 
     expect(screen.getByText(`Home full — put in ${SUGGESTED}?`)).toBeTruthy()
     expect(screen.getByLabelText(`Scan ${SUGGESTED} to confirm`)).toBeTruthy()
-    expect(screen.getByText('Scanning this bin confirms it. The desk can choose another bin instead.')).toBeTruthy()
+    expect(screen.getByText('Scanning this location confirms it. The desk can choose another location instead.')).toBeTruthy()
     // Not the ordinary prompt, and not the "a different bay is fine" helper.
-    expect(screen.queryByLabelText(/Scan the bin/)).toBeNull()
+    expect(screen.queryByLabelText(/Scan the location/)).toBeNull()
     expect(screen.queryByText(/A different bay is fine/)).toBeNull()
   })
 
@@ -162,7 +162,7 @@ describe('putaway walk card — overflow awaiting confirmation', () => {
 
     const alert = screen.getByRole('alert')
     expect(alert.textContent).toBe(
-      `Scan ${SUGGESTED} to confirm this overflow bin, or leave it for the desk to choose another.`,
+      `Scan ${SUGGESTED} to confirm this overflow location, or leave it for the desk to choose another.`,
     )
     expect(confirmMock).not.toHaveBeenCalled()
     // Still on the bin step: the count is not offered.
@@ -231,7 +231,7 @@ describe('putaway walk card — overflow awaiting confirmation', () => {
     open()
 
     expect(screen.queryByText(/Home full/)).toBeNull()
-    expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
+    expect(screen.getByLabelText(/Scan the location/)).toBeTruthy()
     expect(screen.getByText(/A different bay is fine/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /Put it back on the queue/ })).toBeTruthy()
   })
@@ -241,7 +241,7 @@ describe('putaway walk card — overflow awaiting confirmation', () => {
     open()
 
     expect(screen.queryByText(/Home full/)).toBeNull()
-    expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
+    expect(screen.getByLabelText(/Scan the location/)).toBeTruthy()
     expect(confirmMock).not.toHaveBeenCalled()
   })
 })

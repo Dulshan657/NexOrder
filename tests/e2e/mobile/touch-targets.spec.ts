@@ -15,7 +15,7 @@ test.describe('F15 — ScanField clears the touch floor', () => {
   test('the stocktake bin finder: input and camera button', async ({ warehousePage: page }) => {
     await navigateTo(page, 'Stocktake')
 
-    const field = page.getByLabel('Scan a bin label')
+    const field = page.getByLabel('Scan a location label')
     await expect(field).toBeVisible()
     await expectTouchTarget(field, 'bin scan field')
 

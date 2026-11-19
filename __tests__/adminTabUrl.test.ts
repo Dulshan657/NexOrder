@@ -67,6 +67,12 @@ describe('roleCanOpenTab', () => {
     expect(roleCanOpenTab('Warehouse', 'Settings')).toBe(false)
   })
 
+  it('a Warehouse user can open Where is it', () => {
+    expect(roleCanOpenTab('Warehouse', 'Where is it')).toBe(true)
+    expect(roleCanOpenTab('Manager', 'Where is it')).toBe(true)
+    expect(ADMIN_TAB_LABELS['Where is it']).toBe('Where is it?')
+  })
+
   it('gives an unknown role nothing', () => {
     expect(roleCanOpenTab('Customer', 'Dashboard')).toBe(false)
     expect(roleCanOpenTab('', 'Dashboard')).toBe(false)

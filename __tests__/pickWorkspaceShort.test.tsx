@@ -272,7 +272,7 @@ describe('pick workspace short picks', () => {
       await openWorkspace()
       expect(screen.getByText('Test Item 1')).toBeTruthy()
       expect(finishShortTrigger()).toBeNull()
-      expect(screen.queryByText(/scan a bin to pick/i)).toBeNull()
+      expect(screen.queryByText(/scan a location to pick/i)).toBeNull()
       cleanup()
     }
   })
@@ -281,8 +281,8 @@ describe('pick workspace short picks', () => {
     seed({ imported: false, tasks: [] })
     await openWorkspace()
 
-    expect(await screen.findByText(/no allocated bin for this line yet/i)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /scan a bin to pick/i })).toBeNull()
+    expect(await screen.findByText(/no allocated location for this line yet/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /scan a location to pick/i })).toBeNull()
     expect(finishShortTrigger()).toBeNull()
   })
 
@@ -344,11 +344,11 @@ describe('pick workspace short picks', () => {
     await openWorkspace()
 
     // Said plainly before anything is scanned.
-    expect(await screen.findByText(/the system shows no available stock of this item in any bin/i)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /scan a bin to pick/i }))
+    expect(await screen.findByText(/the system shows no available stock of this item in any location/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /scan a location to pick/i }))
 
     // Any bin, then the item. The item is scanned by its SKU label: this product has no barcode.
-    scan(/scan the bin you found it in/i, 'TST-RACK-07')
+    scan(/scan the location you found it in/i, 'TST-RACK-07')
     expect(await screen.findByText(/shows no available stock of this item at TST-RACK-07/i)).toBeTruthy()
     scan(/scan the item/i, 'TST-1')
 
@@ -362,12 +362,12 @@ describe('pick workspace short picks', () => {
   it('refuses a scanned code that is not a place stock sits, and an unknown one', async () => {
     seed({ lines: [line({ orderItemId: 1, quantity: 3, picked: 0 })], tasks: [] })
     await openWorkspace()
-    fireEvent.click(await screen.findByRole('button', { name: /scan a bin to pick/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /scan a location to pick/i }))
 
-    scan(/scan the bin you found it in/i, 'NOPE-123')
-    expect(await screen.findByText(/no bin matches NOPE-123/i)).toBeTruthy()
+    scan(/scan the location you found it in/i, 'NOPE-123')
+    expect(await screen.findByText(/no location matches NOPE-123/i)).toBeTruthy()
 
-    scan(/scan the bin you found it in/i, 'TST-RACK')
+    scan(/scan the location you found it in/i, 'TST-RACK')
     expect(await screen.findByText(/not a place stock sits/i)).toBeTruthy()
     expect(screen.queryByLabelText(/scan the item/i)).toBeNull()
     expect(svc.recordPick).not.toHaveBeenCalled()
@@ -376,8 +376,8 @@ describe('pick workspace short picks', () => {
   it('refuses the wrong item at an unlisted bin before posting anything', async () => {
     seed({ lines: [line({ orderItemId: 1, quantity: 3, picked: 0 })], tasks: [] })
     await openWorkspace()
-    fireEvent.click(await screen.findByRole('button', { name: /scan a bin to pick/i }))
-    scan(/scan the bin you found it in/i, 'TST-RACK-07')
+    fireEvent.click(await screen.findByRole('button', { name: /scan a location to pick/i }))
+    scan(/scan the location you found it in/i, 'TST-RACK-07')
     await screen.findByLabelText(/scan the item/i)
     scan(/scan the item/i, 'TST-999')
 
@@ -470,8 +470,8 @@ describe('pick workspace short picks', () => {
       svc.recordPick.mockImplementation(() => new Promise((res) => { release = res }))
       seed({ lines: [line({ orderItemId: 1, quantity: 3, picked: 0 })], tasks: [] })
       await openWorkspace()
-      fireEvent.click(await screen.findByRole('button', { name: /scan a bin to pick/i }))
-      scan(/scan the bin you found it in/i, 'TST-RACK-07')
+      fireEvent.click(await screen.findByRole('button', { name: /scan a location to pick/i }))
+      scan(/scan the location you found it in/i, 'TST-RACK-07')
       await screen.findByLabelText(/scan the item/i)
       scan(/scan the item/i, 'TST-1')
       const confirm = await screen.findByRole('button', { name: /confirm pick/i })
@@ -527,8 +527,8 @@ describe('pick workspace short picks', () => {
       svc.recordPick.mockRejectedValue(refusal('server text', { reason, code: 'CONFLICT', status: 409 }))
       seed({ lines: [line({ orderItemId: 1, quantity: 3, picked: 0 })], tasks: [] })
       await openWorkspace()
-      fireEvent.click(await screen.findByRole('button', { name: /scan a bin to pick/i }))
-      scan(/scan the bin you found it in/i, 'TST-RACK-07')
+      fireEvent.click(await screen.findByRole('button', { name: /scan a location to pick/i }))
+      scan(/scan the location you found it in/i, 'TST-RACK-07')
       await screen.findByLabelText(/scan the item/i)
       scan(/scan the item/i, 'TST-1')
       const qty = (await screen.findByLabelText('Quantity picked')) as HTMLInputElement
@@ -549,7 +549,7 @@ describe('pick workspace short picks', () => {
       seed({ tasks: [task({ orderItemId: 1, locationId: 501, remaining: 3 })] })
       await openWorkspace()
       fireEvent.click(await screen.findByRole('button', { name: /scan to pick 3/i }))
-      scan(/scan the bin/i, 'TST-A-B501')
+      scan(/scan the location/i, 'TST-A-B501')
       await screen.findByLabelText(/scan the item/i)
       scan(/scan the item/i, 'tst-1') // a label scanned in lower case still matches
       fireEvent.click(await screen.findByRole('button', { name: /confirm pick/i }))
@@ -579,7 +579,7 @@ describe('pick workspace short picks', () => {
 
     async function pickAtDirectedBin() {
       fireEvent.click(await screen.findByRole('button', { name: /scan to pick 3/i }))
-      scan(/scan the bin/i, 'TST-A-B501')
+      scan(/scan the location/i, 'TST-A-B501')
       await screen.findByLabelText(/scan the item/i)
       scan(/scan the item/i, 'TST-1')
       fireEvent.click(await screen.findByRole('button', { name: /confirm pick/i }))
@@ -622,7 +622,7 @@ describe('pick workspace short picks', () => {
 
       // The reserved task is picked and the refetch has not landed: no line may read as "none".
       expect(screen.queryByText(/no available stock/i)).toBeNull()
-      expect(screen.queryByRole('button', { name: /scan a bin to pick/i })).toBeNull()
+      expect(screen.queryByRole('button', { name: /scan a location to pick/i })).toBeNull()
 
       await act(async () => {
         answer({
@@ -706,7 +706,7 @@ describe('pick workspace short picks', () => {
       const classes = (el: HTMLElement) => el.className
 
       const finish = await screen.findByRole('button', { name: 'None found / finish short' })
-      const anyBin = screen.getByRole('button', { name: /scan a bin to pick/i })
+      const anyBin = screen.getByRole('button', { name: /scan a location to pick/i })
       for (const el of [finish, anyBin]) expect(classes(el)).toMatch(/touch-target-y|min-h-\[44px\]/)
 
       fireEvent.click(finish)

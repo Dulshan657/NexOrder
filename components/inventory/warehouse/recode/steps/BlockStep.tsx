@@ -61,7 +61,7 @@ export function BlockStep({
             }`}
           />
         </label>
-        <p className={`mt-1.5 ${HINT}`}>Every bin you selected gets a code starting with this.</p>
+        <p className={`mt-1.5 ${HINT}`}>Every location you selected gets a code starting with this.</p>
         {/* Amber and iconed, not neutral grey. `blockIssue` is advice about a name
             that will be sanitized, not a refusal — but rendered in the same colour
             as helper text it was indistinguishable from one. */}
@@ -110,7 +110,7 @@ export function BlockStep({
       {incumbentCount > 0 && (
         <Callout dense>
           <span className="font-mono font-semibold text-stone-700">{clean}</span> already has{' '}
-          {incumbentCount} bin{incumbentCount === 1 ? '' : 's'}. Painting more continues the
+          {incumbentCount} location{incumbentCount === 1 ? '' : 's'}. Painting more continues the
           numbering — those {incumbentCount} keep the codes they have.
         </Callout>
       )}

@@ -111,7 +111,7 @@ function setUnit(index: number, value: string) {
 
 /** Open the destination picker for a portion, then confirm the stub's bin. */
 function chooseBin(index = 1) {
-  fireEvent.click(screen.getAllByText('Choose a bin')[index - 1])
+  fireEvent.click(screen.getAllByText('Choose a location')[index - 1])
   fireEvent.click(screen.getByText('confirm-bin'))
 }
 
@@ -226,8 +226,8 @@ describe('PalletBreakdownSheet payload', () => {
     renderSheet()
     scanPlate()
     setCount(1, '6')
-    fireEvent.click(screen.getByRole('button', { name: /Suggest bins/i }))
-    await waitFor(() => expect(screen.getByText(/No bin the engine will offer/i)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /Suggest locations/i }))
+    await waitFor(() => expect(screen.getByText(/No location the engine will offer/i)).toBeTruthy())
   })
 
   it('drops a stale engine verdict when the quantity changes under it', async () => {
@@ -241,12 +241,12 @@ describe('PalletBreakdownSheet payload', () => {
     renderSheet()
     scanPlate()
     setCount(1, '6')
-    fireEvent.click(screen.getByRole('button', { name: /Suggest bins/i }))
-    await waitFor(() => expect(screen.getByText(/No bin the engine will offer/i)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /Suggest locations/i }))
+    await waitFor(() => expect(screen.getByText(/No location the engine will offer/i)).toBeTruthy())
 
     // 'no bin for 6 cartons' says nothing about 2, so it must not linger.
     setCount(1, '2')
-    expect(screen.queryByText(/No bin the engine will offer/i)).toBeNull()
+    expect(screen.queryByText(/No location the engine will offer/i)).toBeNull()
   })
 
   it('renders the label sheet as a LINK, never a programmatic open', async () => {

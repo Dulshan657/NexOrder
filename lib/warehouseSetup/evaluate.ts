@@ -127,17 +127,17 @@ function evidenceFor(step: SetupStep, input: SetupInput, done: boolean): string 
       return input.layout.needsRepublish ? 'changed since publish — republish' : 'published'
     case 'labels_confirmed':
       if (!input.labels) return 'publish a layout first'
-      if (input.labels.total === 0) return 'no bins to label'
+      if (input.labels.total === 0) return 'no locations to label'
       return done
-        ? `${plural(input.labels.total, 'bin')} confirmed`
-        : `${input.labels.outstanding} of ${input.labels.total} bins unconfirmed`
+        ? `${plural(input.labels.total, 'location')} confirmed`
+        : `${input.labels.outstanding} of ${input.labels.total} locations unconfirmed`
     case 'catalogue_loaded':
       return plural(input.productCount, 'product')
     case 'replen_min_max':
       return done ? plural(input.replenConfiguredCount, 'product') + ' configured' : 'none configured'
     case 'opening_stock':
-      if (done) return input.locationType === 'racked' ? 'stock placed in bins' : 'stock on hand'
-      if (input.hasAnyStock) return 'received, none placed in bins'
+      if (done) return input.locationType === 'racked' ? 'stock placed in locations' : 'stock on hand'
+      if (input.hasAnyStock) return 'received, none placed in locations'
       return 'no stock counted yet'
     default:
       return ''

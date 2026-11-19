@@ -116,7 +116,7 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
     // Built-in: unreachable from any dock.
     if (bin.distanceFromDockM === null) {
       reject('unreachable', null, 'unreachable', 'No route from a receiving dock', bin,
-        'bin has no path to a dock')
+        'location has no path to a dock')
       continue
     }
 
@@ -170,7 +170,7 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
       const level = worstCompatibility(compatIndex, request.sku.category, bin.occupantCategories)
       if (level === 'forbidden') {
         reject('compatibility', null, 'compatibility', 'Incompatible with stored stock', bin,
-          `${request.sku.category} cannot share a bin with ${bin.occupantCategories.join(', ')}`)
+          `${request.sku.category} cannot share a location with ${bin.occupantCategories.join(', ')}`)
         continue
       }
       if (level === 'restricted') {
@@ -271,7 +271,7 @@ export function scoreCandidates(request: PutawayRequest, filter: FilterResult): 
       normalized: fitNorm,
       weighted: fitNorm * w.capacityFit,
       detail: headroom === null
-        ? 'uncapped bin'
+        ? 'uncapped location'
         : `${need.toFixed(2)} of ${headroom.toFixed(2)} free ${capacityUnitLabel(bin.slotKind)} used`,
     })
 

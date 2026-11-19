@@ -148,3 +148,46 @@ export function putawayMarkers(
   }
   return <g>{parts}</g>
 }
+
+const AMBER = '#d97706' // amber-600: distinct from the blue putaway target and the route line
+
+/**
+ * Every place holding a found product (NX-0039 "Find a product"), outlined on
+ * the floor being viewed. A place with no placement (the warehouse root — stock
+ * still on the dock) has nothing to outline and is skipped. The stroke is held
+ * at a constant on-screen width, like the route, so it reads at every zoom.
+ */
+export function holdingMarkers(
+  cell: number,
+  scale: number,
+  locationIds: readonly number[],
+  placements: PlacementLookup,
+  floor: number,
+): ReactNode {
+  const s = scale > 0 ? scale : 1
+  const stroke = 3 / s
+  const pad = 1.5 / s
+  return (
+    <g pointerEvents="none">
+      {locationIds.map((id) => {
+        const p = placements.get(id)
+        if (!p || p.floor !== floor) return null
+        return (
+          <rect
+            key={id}
+            data-holding={id}
+            x={p.x * cell - pad}
+            y={p.y * cell - pad}
+            width={p.w * cell + pad * 2}
+            height={p.h * cell + pad * 2}
+            rx={3 / s}
+            fill={AMBER}
+            fillOpacity={0.18}
+            stroke={AMBER}
+            strokeWidth={stroke}
+          />
+        )
+      })}
+    </g>
+  )
+}

@@ -46,7 +46,7 @@ const CHOSEN = 'TST-WALK-N1'
 const SKU = 'TST-WALK-200'
 const BIN = { code: ENGINE, name: ENGINE, isActive: true }
 
-const OFFER = 'This product has no home bin. Give it one?'
+const OFFER = 'This product has no home location. Give it one?'
 
 /** A loose line the planner put through the engine because its product had no
  *  home, and which still has none (`homeLocationId: null`). No plate and no
@@ -116,7 +116,7 @@ function scanBin(label: RegExp | string, code: string) {
 /** Open the chooser and pick the bin from the list. */
 function giveHome(code = CHOSEN) {
   fireEvent.click(screen.getByRole('button', { name: 'Give it a home' }))
-  fireEvent.change(screen.getByLabelText('Or pick a bin'), { target: { value: code } })
+  fireEvent.change(screen.getByLabelText('Or pick a location'), { target: { value: code } })
   fireEvent.click(screen.getByRole('button', { name: 'Make this its home' }))
 }
 
@@ -228,7 +228,7 @@ describe('putaway walk card — a product with no home', () => {
 
     expect(screen.queryByText(OFFER)).toBeNull()
     // The stop itself goes on as usual: scan the hold bin it was sent to.
-    expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
+    expect(screen.getByLabelText(/Scan the location/)).toBeTruthy()
   })
 
   it('offers nothing on a single-product pallet', () => {
@@ -257,7 +257,7 @@ describe('putaway walk card — a product with no home', () => {
     scanBin(/plate/i, 'TST-WALK-HU1')
     expect(screen.getByText(OFFER)).toBeTruthy()
 
-    scanBin(/Scan the bin/, ENGINE)
+    scanBin(/Scan the location/, ENGINE)
     expect(screen.getByLabelText(/How much did you put away/)).toBeTruthy()
     expect(screen.queryByText(OFFER)).toBeNull()
   })
@@ -272,7 +272,7 @@ describe('putaway walk card — a product with no home', () => {
 
     expect(screen.queryByText(OFFER)).toBeNull()
     expect(choicesMock).not.toHaveBeenCalled()
-    scanBin(/Scan the bin — expecting TST-WALK-E1/, ENGINE)
+    scanBin(/Scan the location — expecting TST-WALK-E1/, ENGINE)
     fireEvent.click(screen.getByRole('button', { name: /Confirm/i }))
 
     await waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1))
@@ -285,10 +285,10 @@ describe('putaway walk card — a product with no home', () => {
     mount()
     open()
     fireEvent.click(screen.getByRole('button', { name: 'Give it a home' }))
-    expect(screen.getByText(`Give ${SKU} a home bin`)).toBeTruthy()
+    expect(screen.getByText(`Give ${SKU} a home location`)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByText(`Give ${SKU} a home bin`)).toBeNull()
+    expect(screen.queryByText(`Give ${SKU} a home location`)).toBeNull()
     expect(screen.getByText(OFFER)).toBeTruthy()
     expect(completeMock).not.toHaveBeenCalled()
   })
@@ -315,15 +315,15 @@ describe('putaway walk card — a product with no home', () => {
     expect(screen.getByText(CHOSEN)).toBeTruthy()
     expect(screen.queryByText(ENGINE)).toBeNull()
     expect(screen.queryByText(OFFER)).toBeNull()
-    expect(screen.getByLabelText(`Scan ${CHOSEN} — it becomes the home bin`)).toBeTruthy()
+    expect(screen.getByLabelText(`Scan ${CHOSEN} — it becomes the home location`)).toBeTruthy()
 
     // The engine's bin is refused now, and nothing moves on.
-    scanBin(`Scan ${CHOSEN} — it becomes the home bin`, ENGINE)
-    expect(screen.getByRole('alert').textContent).toBe(`Scan ${CHOSEN}, the bin you chose as its home.`)
+    scanBin(`Scan ${CHOSEN} — it becomes the home location`, ENGINE)
+    expect(screen.getByRole('alert').textContent).toBe(`Scan ${CHOSEN}, the location you chose as its home.`)
     expect(screen.queryByLabelText(/How much did you put away/)).toBeNull()
 
     // Typed in lower case: the field ignores the same string twice inside 250 ms.
-    scanBin(`Scan ${CHOSEN} — it becomes the home bin`, CHOSEN.toLowerCase())
+    scanBin(`Scan ${CHOSEN} — it becomes the home location`, CHOSEN.toLowerCase())
     fireEvent.click(await screen.findByRole('button', { name: /Confirm/i }))
 
     await waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1))
@@ -331,7 +331,7 @@ describe('putaway walk card — a product with no home', () => {
     expect(sent.makeHome).toBe(true)
     expect(sent.scan.locationCode).toBe(CHOSEN.toLowerCase())
     expect(sent.recommendationId).toBe(901)
-    expect(toastMock).toHaveBeenCalledWith(`Placed in ${CHOSEN} — it is now ${SKU}'s home bin`, 'success')
+    expect(toastMock).toHaveBeenCalledWith(`Placed in ${CHOSEN} — it is now ${SKU}'s home location`, 'success')
   })
 
   it('puts the focus on the scan field of the stop once a home is chosen, so the gun can scan', () => {
@@ -340,7 +340,7 @@ describe('putaway walk card — a product with no home', () => {
     open()
     giveHome()
 
-    expect(document.activeElement).toBe(screen.getByLabelText(`Scan ${CHOSEN} — it becomes the home bin`))
+    expect(document.activeElement).toBe(screen.getByLabelText(`Scan ${CHOSEN} — it becomes the home location`))
   })
 
   it('sends the scan of the chosen bin as the manager typed it', async () => {
@@ -351,7 +351,7 @@ describe('putaway walk card — a product with no home', () => {
     mount()
     open()
     giveHome()
-    scanBin(`Scan ${CHOSEN} — it becomes the home bin`, CHOSEN)
+    scanBin(`Scan ${CHOSEN} — it becomes the home location`, CHOSEN)
     fireEvent.click(await screen.findByRole('button', { name: /Confirm/i }))
 
     await waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1))
@@ -369,7 +369,7 @@ describe('putaway walk card — a product with no home', () => {
     mount()
     open()
     giveHome()
-    scanBin(`Scan ${CHOSEN} — it becomes the home bin`, CHOSEN)
+    scanBin(`Scan ${CHOSEN} — it becomes the home location`, CHOSEN)
     fireEvent.click(await screen.findByRole('button', { name: /Confirm/i }))
 
     await waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1))
@@ -382,12 +382,12 @@ describe('putaway walk card — a product with no home', () => {
 
   it("keeps the stop open with the server's words when the home was set meanwhile", async () => {
     withChoices()
-    const refusal = 'this product already has a home bin; change it in the home bin editor'
+    const refusal = 'this product already has a home location; change it in the home location editor'
     completeMock.mockRejectedValue(new Error(refusal))
     mount()
     open()
     giveHome()
-    scanBin(`Scan ${CHOSEN} — it becomes the home bin`, CHOSEN)
+    scanBin(`Scan ${CHOSEN} — it becomes the home location`, CHOSEN)
     fireEvent.click(await screen.findByRole('button', { name: /Confirm/i }))
 
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(refusal))

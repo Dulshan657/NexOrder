@@ -195,7 +195,7 @@ export function evaluateBinWarnings({
       warnings.push({
         code: 'weight',
         message:
-          `Too heavy — ${round(incomingKg)} kg into a bin rated for ${bin.weightCapacityKg} kg.`,
+          `Too heavy — ${round(incomingKg)} kg into a location rated for ${bin.weightCapacityKg} kg.`,
       })
     }
   }
@@ -206,7 +206,7 @@ export function evaluateBinWarnings({
   if (bin.kind === 'STAGING' || bin.kind === 'WAREHOUSE') {
     warnings.push({
       code: 'not_storage',
-      message: `${bin.code} is a staging area, not a storage bin — stock left here stays unslotted.`,
+      message: `${bin.code} is a staging area, not a storage location — stock left here stays unslotted.`,
     })
   }
 

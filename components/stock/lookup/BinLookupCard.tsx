@@ -73,8 +73,8 @@ export function BinLookupCard({ location, inScope, scopeLabel, onCountBin }: Bin
       {!inScope && (
         <Callout tone="info" dense title="Another site">
           {scopeLabel
-            ? `This bin is not in ${scopeLabel}, the site you are working in.`
-            : 'This bin is not in the site you are working in.'}
+            ? `This location is not in ${scopeLabel}, the site you are working in.`
+            : 'This location is not in the site you are working in.'}
         </Callout>
       )}
 
@@ -84,7 +84,7 @@ export function BinLookupCard({ location, inScope, scopeLabel, onCountBin }: Bin
           onClick={() => onCountBin(location.id)}
           className="touch-target-y flex w-full items-center justify-center gap-2 rounded-xl bg-nexgen-blue-dark px-4 py-2.5 text-sm font-semibold text-white btn-press"
         >
-          <ClipboardList className="h-4 w-4" aria-hidden="true" /> Count this bin
+          <ClipboardList className="h-4 w-4" aria-hidden="true" /> Count this location
         </button>
       )}
 

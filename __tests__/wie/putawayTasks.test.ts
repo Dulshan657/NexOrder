@@ -391,7 +391,7 @@ describe('generatePutawayTasks — home bin', () => {
   // NX-0032: home bins are an enforced rule now, so a home that cannot be read
   // is not "no home" -- it stops putaway, like the rule and slotting loads.
   describe('when the home bin cannot be read', () => {
-    const MESSAGE = 'Home bin unavailable, try again.'
+    const MESSAGE = 'Home location unavailable, try again.'
     let logged: ReturnType<typeof vi.spyOn>
 
     beforeEach(() => {

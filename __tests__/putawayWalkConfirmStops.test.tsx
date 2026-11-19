@@ -160,22 +160,22 @@ describe('PutawayWalkView — overflow lines awaiting confirmation', () => {
     // The scan finder looks lines up by the bin they are destined for; for a
     // confirm stop that is the suggested bin, not the (empty) assigned one.
     mountLegacy([CONFIRM_STOP])
-    const finder = screen.getByLabelText(/plate, carton or bin/i)
+    const finder = screen.getByLabelText(/plate, carton or location/i)
     fireEvent.change(finder, { target: { value: OVERFLOW_BIN } })
     fireEvent.keyDown(finder, { key: 'Enter' })
     // A single match makes that stop the one being worked, and the walk then
     // withdraws the queue-level finder (one live scan input at a time). A scan
     // that matched nothing would leave it where it was.
-    expect(screen.queryByLabelText(/plate, carton or bin/i)).toBeNull()
+    expect(screen.queryByLabelText(/plate, carton or location/i)).toBeNull()
     expect(screen.getByRole('button', { name: /TST-WALK Product 100/ })).toBeTruthy()
   })
 
   it('does not find the stop by a bin it is not at', () => {
     mountLegacy([CONFIRM_STOP])
-    const finder = screen.getByLabelText(/plate, carton or bin/i)
+    const finder = screen.getByLabelText(/plate, carton or location/i)
     fireEvent.change(finder, { target: { value: HOME_BIN } })
     fireEvent.keyDown(finder, { key: 'Enter' })
-    expect(screen.getByLabelText(/plate, carton or bin/i)).toBeTruthy()
+    expect(screen.getByLabelText(/plate, carton or location/i)).toBeTruthy()
   })
 
   it('tells an empty walk where the lines that need a decision are', () => {
@@ -192,7 +192,7 @@ describe('PutawayWalkView — overflow lines awaiting confirmation', () => {
 // Walk, so this is the one place the wiring between them is proved: without it a
 // dropped prop would leave the give-a-home offer dead for managers and nothing red.
 describe('PutawayWalkView — the give-a-home offer reaches the stop card', () => {
-  const OFFER = 'This product has no home bin. Give it one?'
+  const OFFER = 'This product has no home location. Give it one?'
 
   /** A line for a product that has no home: assigned to an engine bin. */
   const NO_HOME_STOP = line({

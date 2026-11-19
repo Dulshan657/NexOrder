@@ -125,6 +125,6 @@ describe('evaluatePublishReadiness', () => {
     expect(statusOf(r, 'unreachable_bins')).toBe('fail')
     expect(r.unreachableIds).toEqual(['island-bin'])
     expect(r.ready).toBe(false)
-    expect(r.checks.find((c) => c.code === 'unreachable_bins')?.message).toContain('1 bin(s)')
+    expect(r.checks.find((c) => c.code === 'unreachable_bins')?.message).toContain('1 location(s)')
   })
 })

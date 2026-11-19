@@ -154,7 +154,7 @@ serve(async (req: Request) => {
         .eq('id', input.warehouseId).eq('kind', 'WAREHOUSE').single()
       if (!bulkWh) throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
       if ((bulkWh as any).location_type !== 'racked') {
-        throw new EdgeFunctionError('CONFLICT', 'Home bins apply only to racked warehouses')
+        throw new EdgeFunctionError('CONFLICT', 'Home locations apply only to racked warehouses')
       }
       const bulkPath = (bulkWh as any).materialized_path as string
 
@@ -199,7 +199,7 @@ serve(async (req: Request) => {
         seen.add(row.productId)
 
         if (inactiveBins.has(row.binId)) {
-          failed.push({ productId: row.productId, reason: 'That bin is no longer active.' })
+          failed.push({ productId: row.productId, reason: 'That location is no longer active.' })
           continue
         }
 
@@ -271,13 +271,13 @@ serve(async (req: Request) => {
     // Validate the bin lives inside the (racked) warehouse via materialized_path.
     const { data: wh } = await admin.from('locations').select('materialized_path, location_type').eq('id', input.warehouseId).eq('kind', 'WAREHOUSE').single()
     if (!wh) throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
-    if ((wh as any).location_type !== 'racked') throw new EdgeFunctionError('CONFLICT', 'Home bins apply only to racked warehouses')
+    if ((wh as any).location_type !== 'racked') throw new EdgeFunctionError('CONFLICT', 'Home locations apply only to racked warehouses')
 
     const { data: bin } = await admin.from('locations').select('id, materialized_path').eq('id', input.binId).single()
-    if (!bin) throw new EdgeFunctionError('NOT_FOUND', 'Bin not found')
+    if (!bin) throw new EdgeFunctionError('NOT_FOUND', 'Location not found')
     const whPath = (wh as any).materialized_path as string
     if (!String((bin as any).materialized_path).startsWith(`${whPath}/`)) {
-      throw new EdgeFunctionError('INVALID_INPUT', 'Bin is not inside the given warehouse')
+      throw new EdgeFunctionError('INVALID_INPUT', 'Location is not inside the given warehouse')
     }
 
     // Replenishment needs a pick-zone level as its destination. The trigger on
@@ -293,7 +293,7 @@ serve(async (req: Request) => {
       if (!role?.is_pick_zone || !role?.is_active) {
         throw new EdgeFunctionError(
           'CONFLICT',
-          'Replenishment refills a pick zone, so the home bin has to be a pick-zone level. ' +
+          'Replenishment refills a pick zone, so the home location has to be a pick-zone level. ' +
             'Choose a pick-zone level, or change the role on this one first.',
           { reason: 'not_pick_zone' },
         )
@@ -317,7 +317,7 @@ serve(async (req: Request) => {
       .select()
       .single()
     if (error || !upserted) {
-      const msg = error?.message ?? 'Failed to set home bin'
+      const msg = error?.message ?? 'Failed to set home location'
       // The table's CHECKs and its pick-zone trigger surface here.
       if (/INVALID_BIN|product_home_bins_(minmax|replen_config)_check/.test(msg)) {
         throw new EdgeFunctionError(

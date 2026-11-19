@@ -60,7 +60,7 @@ export function RenameAreaModal({ warehouseId, areaName, onClose }: RenameAreaMo
       addToast(
         result.renamed > 0
           ? `Renamed ${result.renamed} location${result.renamed === 1 ? '' : 's'}`
-          : `Renamed the area — no bin names needed changing`,
+          : `Renamed the area — no location names needed changing`,
         'success',
       )
       onClose()

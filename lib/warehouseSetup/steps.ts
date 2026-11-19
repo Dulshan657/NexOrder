@@ -95,7 +95,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'configure',
     title: 'Storage forms checked against the real racking',
     why:
-      "A bin's capacity is derived from its storage form's levels x positions, so forms have to be right BEFORE any rack is drawn. The six shipped forms are a starting point — a seeded PALLET_RACK is 4 x 24, and this building's bays may not be.",
+      "A location's capacity is derived from its storage form's levels x positions, so forms have to be right BEFORE any rack is drawn. The six shipped forms are a starting point — a seeded PALLET_RACK is 4 x 24, and this building's bays may not be.",
     appliesTo: 'racked',
     kind: 'signoff',
     blockedBy: [],
@@ -111,7 +111,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'configure',
     title: 'Level roles checked',
     why:
-      'Level roles drive the hard putaway gate and pick-zone replenishment. Three ship by default; confirm they match how this site actually uses its rack levels before bins inherit them.',
+      'Level roles drive the hard putaway gate and pick-zone replenishment. Three ship by default; confirm they match how this site actually uses its rack levels before locations inherit them.',
     appliesTo: 'racked',
     kind: 'signoff',
     blockedBy: [],
@@ -161,7 +161,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'map',
     title: 'Layout drawn and published',
     why:
-      'Publishing is what creates the bin locations and builds the routing graph. Nothing downstream — labels, a count by bin, directed picking — can exist before it.',
+      'Publishing is what creates the locations and builds the routing graph. Nothing downstream — labels, a count by location, directed picking — can exist before it.',
     appliesTo: 'racked',
     kind: 'derived',
     blockedBy: ['storage_forms_reviewed'],
@@ -177,7 +177,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'map',
     title: 'barcode labels printed, applied and confirmed',
     why:
-      'Confirming is a statement that the stickers are physically on the racking — generating the sheets does not set it. A count by bin before this produces numbers nobody can transcribe.',
+      'Confirming is a statement that the stickers are physically on the racking — generating the sheets does not set it. A count by location before this produces numbers nobody can transcribe.',
     appliesTo: 'racked',
     kind: 'derived',
     blockedBy: ['layout_published'],
@@ -220,7 +220,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'load',
     title: 'Replenishment min/max set on the fast movers',
     why:
-      'Replenishment stays completely silent until a product has min and max on a pick-zone home bin. Nothing else warns you that it is doing nothing.',
+      'Replenishment stays completely silent until a product has min and max on a pick-zone home location. Nothing else warns you that it is doing nothing.',
     appliesTo: 'racked',
     kind: 'derived',
     blockedBy: ['layout_published'],
@@ -238,7 +238,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'load',
     title: 'Opening stock counted and imported',
     why:
-      'Count in base units, not cartons, with a bin_code per row. Rows are grouped by bin before chunking so each group is received and then driven onto its own bin.',
+      'Count in base units, not cartons, with a bin_code per row. Rows are grouped by location before chunking so each group is received and then driven onto its own location.',
     appliesTo: 'both',
     kind: 'derived',
     blockedBy: ['labels_confirmed', 'catalogue_loaded'],
@@ -254,7 +254,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     phase: 'load',
     title: 'Exercised: receipt through putaway',
     why:
-      'One receipt driven all the way — assign, walk the route, scan the bin and the plate, complete. Assigning moves no stock; only completing does.',
+      'One receipt driven all the way — assign, walk the route, scan the location and the plate, complete. Assigning moves no stock; only completing does.',
     appliesTo: 'racked',
     kind: 'signoff',
     blockedBy: ['opening_stock'],

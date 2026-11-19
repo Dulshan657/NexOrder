@@ -30,6 +30,10 @@ export type Warehouse3DViewProps = Omit<BuildSceneInput, 'highlightIds'> & {
   binContents: ReadonlyMap<number, readonly BinContentRow[]>
   /** The "Ask the engine" pick route (NX-0037); empty when none is chosen. */
   routeStops: readonly PickRouteStop[]
+  /** A product found in Ask the engine (NX-0039): switches this view's find
+   *  highlight to it, and framing with it. null clears; undefined leaves the
+   *  view's own find bar alone. */
+  focusProductId?: number | null
   selectedLocationId: number | null
   onSelect: (locationId: number) => void
   /** The GPU dropped the context (driver reset, too many tabs). Back to 2D. */
@@ -56,6 +60,9 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
     if (id != null && id === findProductId) setReframe((n) => n + 1)
     else setFindProductId(id)
   }
+  useEffect(() => {
+    if (props.focusProductId !== undefined) setFindProductId(props.focusProductId)
+  }, [props.focusProductId])
   const highlightIds = useMemo(
     () => (findProductId != null ? locationsHoldingProduct(props.binContents, findProductId) : null),
     [props.binContents, findProductId],

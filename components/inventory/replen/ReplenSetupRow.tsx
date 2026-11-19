@@ -114,22 +114,22 @@ const ReplenSetupRow: React.FC<ReplenSetupRowProps> = ({
           type="text"
           list={binListId}
           value={text}
-          placeholder="No home bin"
-          aria-label={`Home bin for ${row.sku}`}
+          placeholder="No home location"
+          aria-label={`Home location for ${row.sku}`}
           onFocus={() => setEditing(true)}
           onBlur={() => setEditing(false)}
           onChange={(e) => commitText(e.target.value)}
           className="text-sm border border-stone-200 rounded-lg px-2 py-1.5 w-full max-w-[220px] bg-white font-mono"
         />
         {text.trim() !== '' && draft.binId == null && (
-          <p className="text-[10px] text-red-600 mt-0.5">no bin with that code here</p>
+          <p className="text-[10px] text-red-600 mt-0.5">no location with that code here</p>
         )}
         {isProposed && draft.binId != null && (
           <p className="text-[10px] text-nexgen-blue mt-0.5">
             {proposal?.source === 'stock'
               ? 'proposed — the stock is already here'
               : proposal?.source === 'free'
-                ? 'proposed — nearest free pick bin'
+                ? 'proposed — nearest free pick location'
                 : 'changed'}
           </p>
         )}

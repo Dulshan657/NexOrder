@@ -347,7 +347,7 @@ const SlottingRulesSection: React.FC = () => {
                       )}
                     </div>
                     <span className="font-mono text-xs tabular-nums text-stone-500">
-                      {b.binCount} bin{b.binCount === 1 ? '' : 's'}
+                      {b.binCount} location{b.binCount === 1 ? '' : 's'}
                     </span>
                     <span className="font-mono text-xs tabular-nums text-stone-500 w-16 text-right">
                       {b.ruleCount} rule{b.ruleCount === 1 ? '' : 's'}
@@ -490,7 +490,7 @@ const SlottingRulesSection: React.FC = () => {
                           {blockById.get(id)?.name ?? `Block ${id}`}
                         </span>
                         <span className="font-mono text-[10px] text-stone-500">
-                          {blockById.get(id)?.binCount ?? 0} bins
+                          {blockById.get(id)?.binCount ?? 0} locations
                         </span>
                         <button
                           type="button" onClick={() => moveBlock(i, -1)} disabled={i === 0}
@@ -531,7 +531,7 @@ const SlottingRulesSection: React.FC = () => {
                 >
                   <option value="">Add a block…</option>
                   {blocks.filter((b) => !form.blockIds.includes(b.id)).map((b) => (
-                    <option key={b.id} value={b.id}>{b.name} ({b.binCount} bins)</option>
+                    <option key={b.id} value={b.id}>{b.name} ({b.binCount} locations)</option>
                   ))}
                 </select>
               </>
@@ -551,7 +551,7 @@ const SlottingRulesSection: React.FC = () => {
               </select>
               <span className="text-[10px] text-stone-500">
                 {form.enforcement === 'hard'
-                  ? 'A scan into a bin outside these blocks is refused, with a recorded override.'
+                  ? 'A scan into a location outside these blocks is refused, with a recorded override.'
                   : 'The engine prefers these blocks; nothing is ever refused.'}
               </span>
             </label>
@@ -561,8 +561,8 @@ const SlottingRulesSection: React.FC = () => {
               onChange={(v: boolean) => setForm({ ...form, reserveEmpty: v })}
               label="Hold the space empty"
               description={form.reserveEmpty
-                ? 'Nothing else may use these bins, even while they sit empty.'
-                : 'Other stock may fill these bins when empty, flagged so it gets moved.'}
+                ? 'Nothing else may use these locations, even while they sit empty.'
+                : 'Other stock may fill these locations when empty, flagged so it gets moved.'}
             />
           </div>
 

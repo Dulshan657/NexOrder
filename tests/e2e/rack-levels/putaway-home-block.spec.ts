@@ -114,11 +114,11 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
     await test.step('1. Admin sets H as the home of TST-HOME-200; the health panel checks it and says "No problems"', async () => {
       await openMinMaxSetup(page, world)
       // Nothing is homed yet, so "No problems" here means nothing: it says 0 checked.
-      await expect(healthPanel(page).getByText(/0 home bins checked/)).toBeVisible()
+      await expect(healthPanel(page).getByText(/0 home locations checked/)).toBeVisible()
       await setHomeBin(page, world.home, h.code, 1, CARTONS)
       await checkHomesAgain(page)
       await expect(healthPanel(page).getByText('No problems')).toBeVisible()
-      await expect(healthPanel(page).getByText(/1 home bin checked/)).toBeVisible()
+      await expect(healthPanel(page).getByText(/1 home location checked/)).toBeVisible()
       await shot(page, testInfo, '1-home-set-no-problems')
       // The maximum was typed in cartons; the database holds base units.
       expect(await homeOf(world, world.home.id)).toEqual({ binId: h.id, maxQty: LINE_UNITS })
@@ -153,7 +153,7 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       await openPutawayQueue(page)
       await selectPutawayWarehouse(page, world.warehouseCode)
       await openWalkStop(page, world.home, h.code)
-      await expect(page.getByText(/This product's home bin. It goes here while the home has room/)).toBeVisible()
+      await expect(page.getByText(/This product's home location. It goes here while the home has room/)).toBeVisible()
       await scanBin(page, x.code)
       await expect(page.getByRole('alert').filter({ hasText: walkHomeMessage(h.code) })).toBeVisible()
       // Not on the count step: the bin field is still there to rescan, there is
@@ -180,7 +180,7 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
     await test.step('6. H is now at its maximum: the health panel lists it as full', async () => {
       await openMinMaxSetup(page, world)
       await checkHomesAgain(page)
-      await expect(healthPanel(page).getByText(`Bin ${h.code} is full`)).toBeVisible()
+      await expect(healthPanel(page).getByText(`Location ${h.code} is full`)).toBeVisible()
       await shot(page, testInfo, '6-panel-lists-full')
     })
 
@@ -256,7 +256,7 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       await openMinMaxSetup(page, world)
       await checkHomesAgain(page)
       const panel = healthPanel(page)
-      await expect(panel.getByText(`Bin ${h.code} is inactive`)).toBeVisible()
+      await expect(panel.getByText(`Location ${h.code} is inactive`)).toBeVisible()
       await expect(panel.getByText(sku, { exact: true })).toBeVisible()
       await shot(page, testInfo, '10-panel-lists-inactive')
     })

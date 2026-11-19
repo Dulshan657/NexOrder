@@ -1,0 +1,246 @@
+// Warehouse Intelligence Engine — "where is this product, and how do I walk it?"
+// (NX-0039). Pure: no Deno, no IO, so the explain-product-location function and
+// the browser read the same definitions.
+//
+// This module DESCRIBES; it never decides. Where a new delivery goes is decided
+// by the normal putaway rules — generatePutawayTasks in dry-run, the very path
+// receiving takes (rules, compatibility, hold zones, home first, overflow
+// nearest home). `newDeliveryReason` only puts that answer into words. Which
+// bins a picker walks to is the stock that is there and free to pick; the
+// order of the walk is sequencePickRoute's.
+
+import type { SuggestionSource } from './homeFirst.ts'
+import type { PickStop } from './picking.ts'
+import { NAME_SEP, RACK_WORD, isUninformativeName } from './locationNaming.ts'
+
+export type StockBadge = 'home' | 'off_home' | 'at_dock'
+
+export interface WhereaboutsBalance {
+  locationId: number
+  code: string
+  onHand: number
+  available: number
+}
+
+export interface WhereaboutsInput {
+  /** The WAREHOUSE location. Stock whose location IS the warehouse has not been put away. */
+  warehouseId: number
+  homeBinId: number | null
+  /** Balance rows for one product, already scoped to this warehouse. One bin may repeat (batches, plates). */
+  balances: readonly WhereaboutsBalance[]
+}
+
+export interface WhereaboutsStockRow {
+  locationId: number
+  code: string
+  onHand: number
+  available: number
+  badge: StockBadge
+}
+
+export interface Whereabouts {
+  /** Home first, then off-home bins by code, then the dock. Zero rows left out. */
+  stock: WhereaboutsStockRow[]
+  homeQty: number
+  offHomeQty: number
+  atDockQty: number
+}
+
+const BADGE_ORDER: Record<StockBadge, number> = { home: 0, off_home: 1, at_dock: 2 }
+
+export function productWhereabouts(input: WhereaboutsInput): Whereabouts {
+  const byLocation = new Map<number, { code: string; onHand: number; available: number }>()
+  for (const b of input.balances) {
+    const prev = byLocation.get(b.locationId)
+    byLocation.set(b.locationId, {
+      code: prev?.code ?? b.code,
+      onHand: (prev?.onHand ?? 0) + b.onHand,
+      available: (prev?.available ?? 0) + b.available,
+    })
+  }
+
+  const stock: WhereaboutsStockRow[] = []
+  for (const [locationId, row] of byLocation) {
+    if (row.onHand <= 0) continue
+    const badge: StockBadge =
+      locationId === input.warehouseId ? 'at_dock'
+        : locationId === input.homeBinId ? 'home'
+          : 'off_home'
+    stock.push({ locationId, code: row.code, onHand: row.onHand, available: row.available, badge })
+  }
+  stock.sort((a, b) => BADGE_ORDER[a.badge] - BADGE_ORDER[b.badge] || a.code.localeCompare(b.code))
+
+  const sum = (badge: StockBadge) =>
+    stock.filter((s) => s.badge === badge).reduce((t, s) => t + s.onHand, 0)
+  return { stock, homeQty: sum('home'), offHomeQty: sum('off_home'), atDockQty: sum('at_dock') }
+}
+
+/** One line of the dry-run putaway answer (generatePutawayTasks' recommendations). */
+export interface PutawayAnswerLine {
+  locationId: number | null
+  /** The place's label (describePlace), not its code. */
+  place: string | null
+  quantity: number
+  source: SuggestionSource
+}
+
+export interface NewDeliveryAnswer {
+  /** 'home' only when the whole delivery fits at home. */
+  source: SuggestionSource
+  /** The first bin a putaway walk goes to (home when any of it goes home). Null: no bin can take it. */
+  locationId: number | null
+  place: string | null
+  homeQty: number
+  overflowQty: number
+  reason: string
+}
+
+const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''))
+
+export function newDeliveryReason(
+  lines: readonly PutawayAnswerLine[],
+  home: { locationId: number; place: string } | null,
+): NewDeliveryAnswer {
+  const placed = lines.filter((l) => l.locationId !== null)
+  const unplacedQty = lines.filter((l) => l.locationId === null).reduce((t, l) => t + l.quantity, 0)
+  const rest = unplacedQty > 0 ? ` ${fmt(unplacedQty)} more have nowhere to go and would stay at the dock.` : ''
+  const homeQty = placed.filter((l) => l.source === 'home').reduce((t, l) => t + l.quantity, 0)
+  const elsewhere = placed.filter((l) => l.source !== 'home')
+  const overflowQty = elsewhere.reduce((t, l) => t + l.quantity, 0)
+  const first = placed.find((l) => l.source === 'home') ?? placed[0] ?? null
+
+  if (!first) {
+    return {
+      source: home ? 'overflow' : 'engine',
+      locationId: null, place: null, homeQty: 0, overflowQty: 0,
+      reason: 'Nowhere can take it under the putaway rules — it would stay at the dock.',
+    }
+  }
+
+  const answer = { locationId: first.locationId, place: first.place, homeQty, overflowQty }
+  if (!home) {
+    return {
+      ...answer, source: 'engine',
+      reason: `No home location set — the engine's best place is ${first.place}.${rest}`,
+    }
+  }
+  if (elsewhere.length === 0) {
+    return { ...answer, source: 'home', reason: `Goes home to ${home.place} — it has room.${rest}` }
+  }
+  const overflowPlaces = [...new Set(elsewhere.map((l) => l.place))].join(', ')
+  if (homeQty > 0) {
+    return {
+      ...answer, source: 'overflow',
+      reason: `Home ${home.place} has room for ${fmt(homeQty)}; the other ${fmt(overflowQty)} go to overflow at ${overflowPlaces}.${rest}`,
+    }
+  }
+  return {
+    ...answer, source: 'overflow',
+    // Putaway also overflows when the home is ruled out (on hold, the wrong
+    // level role, a safety rule), not only when it is full.
+    reason: `Home ${home.place} is full, or ruled out by the putaway rules — goes to overflow at ${overflowPlaces}, nearest to home.${rest}`,
+  }
+}
+
+export interface PlacementRef {
+  graphNodeId: number | null
+  accessOffsetM: number
+}
+
+/**
+ * The bins a picker would walk to: every bin holding stock that is free to
+ * pick. Stock at the dock is not on the racking, and allocated stock is
+ * already promised to an order. A bin with no placement is still returned
+ * (graphNodeId null) so the sequencer reports it unreachable, not hidden.
+ */
+export function pickWalkStops(
+  stock: readonly WhereaboutsStockRow[],
+  placements: ReadonlyMap<number, PlacementRef>,
+): PickStop[] {
+  return stock
+    .filter((s) => s.badge !== 'at_dock' && s.available > 0)
+    .map((s) => {
+      const p = placements.get(s.locationId)
+      return {
+        locationId: s.locationId,
+        graphNodeId: p?.graphNodeId ?? null,
+        accessOffsetM: p?.accessOffsetM ?? 0,
+        meta: { code: s.code, qtyBase: s.available },
+      }
+    })
+}
+
+export interface WalkSummary {
+  totalDistanceM: number
+  /** "1. A-03-02 — 14 m", one per stop, for the handheld. */
+  steps: string[]
+}
+
+export function walkSummary(
+  stops: ReadonlyArray<{ sequence: number; place: string | null; legDistanceM: number }>,
+): WalkSummary {
+  return {
+    totalDistanceM: stops.reduce((t, s) => t + s.legDistanceM, 0),
+    steps: stops.map((s) => `${s.sequence}. ${s.place ?? '?'} — ${Math.round(s.legDistanceM)} m`),
+  }
+}
+
+// ── Places, not "bins" ──────────────────────────────────────────────────────
+//
+// Not everything sits in a bin. A rack level is a rack and a level, a floor bay
+// is a bay in an area, and stock not yet put away is on the dock. The label is
+// for reading; the CODE stays the identity (barcode, scan key) and the screens
+// show it beneath.
+
+export type PlaceKind = 'WAREHOUSE' | 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN' | 'STAGING'
+
+export interface PlaceInput {
+  /** The location IS the warehouse: stock there has not been put away. */
+  isRoot: boolean
+  kind: PlaceKind
+  code: string
+  name: string | null
+  parent: { kind: PlaceKind; code: string; name: string | null } | null
+  /** The area / zone it sits in, when known. */
+  zoneName: string | null
+}
+
+export const DOCK_PLACE = 'Dock — awaiting putaway'
+
+const titleOf = (name: string | null, code: string) =>
+  isUninformativeName(name, code) ? code : (name ?? '').trim()
+
+/** The level number, from "Level 4", "… · L4", or a code ending "-L4". */
+function levelNumber(name: string | null, code: string): string | null {
+  const fromName = /(?:^|\s|·)(?:Level\s*|L)(\d+)\s*$/i.exec((name ?? '').trim())
+  if (fromName) return fromName[1]
+  const fromCode = /-L(\d+)$/i.exec(code.trim())
+  return fromCode ? fromCode[1] : null
+}
+
+function rackTitle(name: string | null, code: string): string {
+  return isUninformativeName(name, code) ? `${RACK_WORD} ${code}` : (name ?? '').trim()
+}
+
+function withZone(label: string, zoneName: string | null): string {
+  const zone = (zoneName ?? '').trim()
+  if (!zone || label.toLowerCase().startsWith(zone.toLowerCase())) return label
+  return `${zone}${NAME_SEP}${label}`
+}
+
+export function describePlace(p: PlaceInput): string {
+  if (p.isRoot || p.kind === 'WAREHOUSE') return DOCK_PLACE
+
+  if (p.kind === 'SHELF' && p.parent?.kind === 'RACK') {
+    const rack = rackTitle(p.parent.name, p.parent.code)
+    const level = levelNumber(p.name, p.code)
+    const label = level ? `${rack}${NAME_SEP}Level ${level}` : `${rack}${NAME_SEP}${titleOf(p.name, p.code)}`
+    return withZone(label, p.zoneName)
+  }
+  if (p.kind === 'RACK') return withZone(rackTitle(p.name, p.code), p.zoneName)
+  if (p.kind === 'STAGING') {
+    const t = titleOf(p.name, p.code)
+    return /staging/i.test(t) ? t : `Staging${NAME_SEP}${t}`
+  }
+  return withZone(titleOf(p.name, p.code), p.zoneName)
+}

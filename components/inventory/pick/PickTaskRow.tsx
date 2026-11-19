@@ -189,7 +189,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5 pl-5">
         <MapPin className="w-3 h-3 text-stone-500 shrink-0" aria-hidden="true" />
         <span className="flex-1 min-w-[10rem] text-xs text-stone-600">
-          The system shows no available stock of this item in any bin.
+          The system shows no available stock of this item in any location.
         </span>
         <button
           onClick={start}
@@ -198,7 +198,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
           // exceptions, and new controls are not added to that list (docs/claude/accessibility.md).
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 touch-target-y bg-nexgen-blue-dark text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
-          <ScanLine className="w-3 h-3" aria-hidden="true" /> Scan a bin to pick
+          <ScanLine className="w-3 h-3" aria-hidden="true" /> Scan a location to pick
         </button>
       </div>
     )
@@ -240,7 +240,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
     <div className="ml-5 my-2 p-3 rounded-lg border border-nexgen-blue/30 bg-nexgen-blue/5 space-y-3">
       {/* Progress: which of the three confirmations are done. */}
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <StepChip label="Bin" done={step !== 'bin'} active={step === 'bin'} value={binCode} />
+        <StepChip label="Location" done={step !== 'bin'} active={step === 'bin'} value={binCode} />
         <span className="text-stone-500">→</span>
         <StepChip label="Item" done={step === 'qty'} active={step === 'item'} value={itemCode} />
         <span className="text-stone-500">→</span>
@@ -271,15 +271,15 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
       )}
       {step === 'bin' && (
         <ScanField
-          label={anyBin ? 'Scan the bin you found it in' : `Scan the bin — expecting ${task.code}`}
+          label={anyBin ? 'Scan the location you found it in' : `Scan the location — expecting ${task.code}`}
           value={binCode}
           onChange={setBinCode}
           onScan={onBinScan}
           flash={step === 'bin' ? flash : null}
-          placeholder={anyBin ? 'Any bin code' : task.code}
-          cameraTitle="Scan the bin label"
+          placeholder={anyBin ? 'Any location code' : task.code}
+          cameraTitle="Scan the location label"
           autoFocus
-          helper={anyBin ? 'The system shows no available stock of this item in any bin.' : undefined}
+          helper={anyBin ? 'The system shows no available stock of this item in any location.' : undefined}
           error={error ?? undefined}
         />
       )}

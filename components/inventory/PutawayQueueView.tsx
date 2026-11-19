@@ -182,7 +182,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search product, SKU, supplier or bin"
+              placeholder="Search product, SKU, supplier or location"
               aria-label="Search the putaway queue"
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
             />
@@ -194,8 +194,8 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
             className="px-2.5 py-2 rounded-lg border border-stone-200 bg-white text-sm text-stone-700"
           >
             <option value="all">All lines</option>
-            <option value="placeable">Has a bin</option>
-            <option value="unplaceable">No eligible bin</option>
+            <option value="placeable">Has a location</option>
+            <option value="unplaceable">No eligible location</option>
           </select>
           <button
             onClick={() => setGrouped(!grouped)}
@@ -303,10 +303,10 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
 
       <ConfirmDialog
         open={confirmAll != null}
-        title="Assign every recommended bin?"
+        title="Assign every recommended location?"
         message={
           confirmAll
-            ? `${confirmAll.length} line${confirmAll.length === 1 ? '' : 's'} go onto the walk, bound for the bins the engine picked. No stock moves until someone carries it. Lines with no eligible bin are left alone.`
+            ? `${confirmAll.length} line${confirmAll.length === 1 ? '' : 's'} go onto the walk, bound for the locations the engine picked. No stock moves until someone carries it. Lines with no eligible location are left alone.`
             : undefined
         }
         confirmLabel="Assign them"

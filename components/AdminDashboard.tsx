@@ -39,7 +39,9 @@ import { getPromotionROI } from '../services/promotionROIService';
 import { computeRepProductivity } from '../services/repProductivityService';
 import { computeTargetProgress, filterOrders } from '../lib/semantic';
 import { formatCount, formatMoney, pctDelta } from '../lib/dashboardFormat';
-import { appDateKey, appDateKeysBetween } from '../lib/period';
+import { appDateKey } from '../lib/period';
+import { dailySeries } from '../lib/dashboardSeries';
+import Band from './dashboard/Band';
 import { useDashboardRange } from '../hooks/useDashboardRange';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
 import type { CustomerRevenue, DateRevenue, ProductUnits, RepRevenue } from '../lib/semantic';
@@ -62,22 +64,6 @@ interface AdminDashboardProps {
 
 const TOP_N = 5;
 const SEGMENT_ORDER = ['high_value', 'growing', 'new', 'declining', 'at_risk'] as const;
-
-/** A quiet label between the page's bands. */
-function Band({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <section aria-label={label} className="space-y-3">
-      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">{label}</h2>
-      {children}
-    </section>
-  );
-}
-
-/** Daily revenue for a window, gaps filled with 0, on the Sydney date keys the metric groups by. */
-function dailySeries(rows: readonly DateRevenue[], from: Date, to: Date) {
-  const byDate = new Map(rows.map(row => [row.date, row.revenue]));
-  return appDateKeysBetween(from, to).map(date => ({ date, revenue: byDate.get(date) || 0 }));
-}
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   allOrders, products, hoReCas, users, invoices, salesTargets = [], onUpdateSalesTargets,

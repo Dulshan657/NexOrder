@@ -232,7 +232,7 @@ const StorageFormsView: React.FC = () => {
         </button>
       </div>
       <p className="text-xs text-stone-500 mb-4">
-        Each form of storage (steel racks, bins, shelving, staging…) with its capacity, weight limit and
+        Each form of storage (steel racks, floor locations, shelving, staging…) with its capacity, weight limit and
         dimensions. Drawable forms appear as tools in the Layout Designer; weight limits are enforced during putaway.
       </p>
 
@@ -423,7 +423,7 @@ const StorageFormsView: React.FC = () => {
                 {/* mig 00100. Sits with the other physical facts rather than in
                     the levels box below: it is a statement about the building,
                     and it is what makes the levels question moot. */}
-                <label className="flex items-center gap-2 text-xs text-stone-600" title="Stock stands on the slab — there is no upright to hang a beam from, so bins of this form can never be split into levels.">
+                <label className="flex items-center gap-2 text-xs text-stone-600" title="Stock stands on the slab — there is no upright to hang a beam from, so locations of this form can never be split into levels.">
                   <input type="checkbox" checked={form.isFloor} onChange={(e) => setForm({ ...form, isFloor: e.target.checked, hasLevels: e.target.checked ? false : form.hasLevels, levelTemplate: e.target.checked ? [] : form.levelTemplate })} />
                   Floor storage (no racking)
                 </label>

@@ -37,7 +37,7 @@ interface PutawayScanFinderProps {
 }
 
 export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
-  rows, locations, binIdOf, onFound, onFilter, label = 'Scan a plate, carton or bin',
+  rows, locations, binIdOf, onFound, onFilter, label = 'Scan a plate, carton or location',
 }) => {
   const [code, setCode] = useState('')
   const [note, setNote] = useState<string | null>(null)
@@ -83,7 +83,7 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
       ? `plate ${match.handlingUnit.code}`
       : match.kind === 'product'
         ? match.product.name
-        : `bin ${match.location.code}`
+        : `location ${match.location.code}`
 
   const handleScan = (raw: string) => {
     const result = resolveScan(raw, index)
@@ -156,7 +156,7 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
         onChange={(v) => { setCode(v); if (note) setNote(null) }}
         onScan={handleScan}
         flash={flash}
-        placeholder="HU-000123, a SKU, or a bin code"
+        placeholder="HU-000123, a SKU, or a location code"
         cameraTitle="Scan to find the line"
       />
       {note && (

@@ -39,24 +39,24 @@ export function resolvePickBin(
   locations: readonly InventoryLocation[],
 ): PickBinResolution {
   const result = resolveScan(raw, index)
-  if (result.kind === 'empty') return { ok: false, message: 'Scan or type the bin code.' }
-  if (result.kind === 'unknown') return { ok: false, message: `No bin matches ${result.normalized}.` }
+  if (result.kind === 'empty') return { ok: false, message: 'Scan or type the location code.' }
+  if (result.kind === 'unknown') return { ok: false, message: `No location matches ${result.normalized}.` }
 
   const candidates: readonly ScanMatch[] = result.kind === 'ambiguous' ? result.candidates : [result]
   const match = candidates.find((c) => c.kind === 'location')
   if (!match || match.kind !== 'location') {
-    return { ok: false, message: 'That code names a product or a pallet. Scan a bin label instead.' }
+    return { ok: false, message: 'That code names a product or a pallet. Scan a location label instead.' }
   }
 
   const target = locations.find((l) => l.id === match.location.id)
-  if (!target) return { ok: false, message: `No bin matches ${match.location.code}.` }
+  if (!target) return { ok: false, message: `No location matches ${match.location.code}.` }
   if (!target.isActive) {
     return { ok: false, message: `${target.code} is not active, so nothing can be picked from it.` }
   }
   if (!isCountableLocation(target)) {
     return {
       ok: false,
-      message: `${target.code} is a ${target.kind}: a container, not a place stock sits. Scan a bin or level inside it.`,
+      message: `${target.code} is a ${target.kind}: a container, not a place stock sits. Scan a location or level inside it.`,
     }
   }
   return { ok: true, location: { id: target.id, code: target.code, name: target.name } }

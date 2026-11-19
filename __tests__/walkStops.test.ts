@@ -51,8 +51,8 @@ describe('overflowConfirmCopy', () => {
     expect(overflowConfirmCopy('TST-WALK-O1')).toEqual({
       heading: 'Home full — put in TST-WALK-O1?',
       scanLabel: 'Scan TST-WALK-O1 to confirm',
-      helper: 'Scanning this bin confirms it. The desk can choose another bin instead.',
-      wrongBin: 'Scan TST-WALK-O1 to confirm this overflow bin, or leave it for the desk to choose another.',
+      helper: 'Scanning this location confirms it. The desk can choose another location instead.',
+      wrongBin: 'Scan TST-WALK-O1 to confirm this overflow location, or leave it for the desk to choose another.',
       confirmed: 'Confirmed — put it in TST-WALK-O1',
     })
   })
@@ -61,9 +61,9 @@ describe('overflowConfirmCopy', () => {
 describe('homeTargetCopy', () => {
   it('is the plan copy table, verbatim, with the bin and the product filled in', () => {
     const copy = homeTargetCopy('TST-WALK-N1', 'TST-WALK-200')
-    expect(copy.scanLabel).toBe('Scan TST-WALK-N1 — it becomes the home bin')
-    expect(copy.wrongBin).toBe('Scan TST-WALK-N1, the bin you chose as its home.')
-    expect(copy.placedAndSet('TST-WALK-N1')).toBe("Placed in TST-WALK-N1 — it is now TST-WALK-200's home bin")
+    expect(copy.scanLabel).toBe('Scan TST-WALK-N1 — it becomes the home location')
+    expect(copy.wrongBin).toBe('Scan TST-WALK-N1, the location you chose as its home.')
+    expect(copy.placedAndSet('TST-WALK-N1')).toBe("Placed in TST-WALK-N1 — it is now TST-WALK-200's home location")
     expect(copy.placedNotSet('TST-WALK-N1')).toBe('Placed in TST-WALK-N1 — someone set a home for TST-WALK-200 meanwhile')
   })
 })

@@ -37,18 +37,11 @@ export function WarehouseTreePanel({
     return map
   }, [tree])
 
+  // Every group starts COLLAPSED (NX-0039, owner's ask): a big site's tree
+  // opened at the zones was a wall of rows. The operator opens what they need,
+  // and selecting a place on the map opens the groups above it (below).
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
   const rowRefs = useRef(new Map<number, HTMLButtonElement>())
-  const didInit = useRef(false)
-
-  // Default: expand the top level (zones) once, when the tree first arrives.
-  // A ref-guard (not prev.size) so a later "collapse all" isn't undone by a
-  // background refetch rebuilding `tree`.
-  useEffect(() => {
-    if (didInit.current || tree.length === 0) return
-    didInit.current = true
-    setExpanded(new Set(tree.map((n) => n.location.id)))
-  }, [tree])
 
   // External selection → expand ancestors + scroll into view.
   useEffect(() => {

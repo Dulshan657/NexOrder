@@ -380,7 +380,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   useEffect(() => {
     const fill = state.lastFill
     if (!fill || !fill.ranges) return
-    addToast(`Named ${fill.count} bin${fill.count === 1 ? '' : 's'} — ${fill.ranges}.`, 'info')
+    addToast(`Named ${fill.count} location${fill.count === 1 ? '' : 's'} — ${fill.ranges}.`, 'info')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastFillSeq])
 
@@ -480,7 +480,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     }
     if (result.stillUnreachable.length > 0) {
       parts.push(
-        `${result.stillUnreachable.length} bin${result.stillUnreachable.length === 1 ? '' : 's'} still unreachable — it's fully enclosed or on a floor with no lift; add a walkway or lift by hand.`,
+        `${result.stillUnreachable.length} location${result.stillUnreachable.length === 1 ? '' : 's'} still unreachable — it's fully enclosed or on a floor with no lift; add a walkway or lift by hand.`,
       )
     }
     addToast(parts.join(' '), result.stillUnreachable.length > 0 ? 'info' : 'success')
@@ -894,7 +894,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                   <p className="font-semibold">Config not checked for this site</p>
                   <p className="mt-1">
                     {unreviewedConfigLabel} still {unreviewedConfigCount === 1 ? 'shows' : 'show'} as
-                    unchecked on the warehouse setup checklist. Publishing creates every bin with the level
+                    unchecked on the warehouse setup checklist. Publishing creates every location with the level
                     roles and zones it inherits from that config, so it is worth settling first.
                   </p>
                 </div>

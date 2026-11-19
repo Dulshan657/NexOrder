@@ -128,7 +128,7 @@ export function applyReplenCsv(
     if (binCode !== '') {
       const resolved = binIdByCode.get(binCode.toLowerCase())
       if (resolved == null) {
-        problems.push(`Line ${line}: no bin "${binCode}" at this warehouse — left as it was.`)
+        problems.push(`Line ${line}: no location "${binCode}" at this warehouse — left as it was.`)
       } else {
         binId = resolved
       }

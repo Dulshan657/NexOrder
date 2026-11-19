@@ -72,13 +72,13 @@ describe('decidePutawayCompletion', () => {
     expect(warehouse.ok === false && warehouse.message).toBe(MAKE_HOME_FORBIDDEN)
     const manager = decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20, role: 'Manager' }))
     expect(manager).toMatchObject({ ok: false, code: 'INVALID_INPUT' })
-    expect(manager.ok === false && manager.message).toMatch(/home bin/i)
+    expect(manager.ok === false && manager.message).toMatch(/home location/i)
     expect(decidePutawayCompletion(input())).toMatchObject({ ok: true, setHome: false })
   })
 
   it('make_home is refused for a Warehouse user even when the product has no home', () => {
     expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null })))
-      .toEqual({ ok: false, code: 'FORBIDDEN', message: 'Only a Manager or Admin can give a product a home bin.' })
+      .toEqual({ ok: false, code: 'FORBIDDEN', message: 'Only a Manager or Admin can give a product a home location.' })
   })
 
   it('make_home from an Admin sets the home when the product has none', () => {
@@ -102,7 +102,7 @@ describe('canSetHome', () => {
 // held stock in a pick face, so the server refuses it whatever bin was scanned.
 describe('heldLineHomeRefusal', () => {
   it('refuses make_home on a held line with CONFLICT and the fixed copy', () => {
-    expect(MAKE_HOME_HELD).toBe("A held line can't make a home bin.")
+    expect(MAKE_HOME_HELD).toBe("A held line can't make a home location.")
     expect(heldLineHomeRefusal({ makeHome: true, anyHeld: true }))
       .toEqual({ ok: false, code: 'CONFLICT', message: MAKE_HOME_HELD })
   })

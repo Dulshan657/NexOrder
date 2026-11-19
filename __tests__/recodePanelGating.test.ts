@@ -44,7 +44,7 @@ describe('applyBlockedReason', () => {
       selectedCount: 0,
       block: '',
       preview: preview({ refusedTotal: 2 }),
-    }))).toMatch(/paint some bins/i)
+    }))).toMatch(/paint some locations/i)
   })
 
   it('asks for a block name once there is a selection', () => {

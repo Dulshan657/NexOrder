@@ -371,10 +371,10 @@ const OK: ReplenRowVerdict = { ok: true }
  */
 export function validateReplenRow(candidate: ReplenRowCandidate): ReplenRowVerdict {
   if (candidate.binId == null) {
-    return { ok: false, reason: 'No home bin chosen.' }
+    return { ok: false, reason: 'No home location chosen.' }
   }
   if (!candidate.binInWarehouse) {
-    return { ok: false, reason: 'That bin is not in this warehouse.' }
+    return { ok: false, reason: 'That location is not in this warehouse.' }
   }
 
   const hasMin = candidate.minQty != null
@@ -400,7 +400,7 @@ export function validateReplenRow(candidate: ReplenRowCandidate): ReplenRowVerdi
     if (!candidate.binIsPickZone) {
       return {
         ok: false,
-        reason: 'Replenishment refills a pick zone, so the home bin has to be a pick-zone level.',
+        reason: 'Replenishment refills a pick zone, so the home location has to be a pick-zone level.',
       }
     }
   }

@@ -64,3 +64,42 @@ describe('ProfileMenu — everyone else', () => {
     expect(signOut).toHaveBeenCalledTimes(1)
   })
 })
+
+// NX-0038. The help centre is reached from the profile menu, filtered to the
+// reader's audience. Only roles with a warehouse guide get the link: a Customer
+// would land on articles about work they never do.
+describe('ProfileMenu — help link', () => {
+  const openMenu = (name: string, role: UserRole) => {
+    render(<ProfileMenu currentUser={mkUser({ name, role })} />)
+    fireEvent.click(screen.getByText(name))
+  }
+
+  it('a Warehouse user gets Help for the floor, in a new tab', () => {
+    openMenu('Wes', UserRole.WAREHOUSE)
+    const link = screen.getByRole('link', { name: /help/i })
+    expect(link.getAttribute('href')).toBe('/help?for=floor')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toMatch(/noopener/)
+  })
+
+  it('an Admin and a Manager get Help for supervisors', () => {
+    openMenu('Ada', UserRole.ADMIN)
+    expect(screen.getByRole('link', { name: /help/i }).getAttribute('href')).toBe('/help?for=supervisor')
+    cleanup()
+    openMenu('Max', UserRole.MANAGER)
+    expect(screen.getByRole('link', { name: /help/i }).getAttribute('href')).toBe('/help?for=supervisor')
+  })
+
+  it('a Customer and a kitchen session get no Help link', () => {
+    // Control: the same menu does carry the link for a role with a guide, so the
+    // absences below are the role rule withholding it, not a menu without one.
+    openMenu('Wes', UserRole.WAREHOUSE)
+    expect(screen.getByRole('link', { name: /help/i })).toBeTruthy()
+    cleanup()
+    openMenu('Dee', UserRole.CUSTOMER)
+    expect(screen.queryByRole('link', { name: /help/i })).toBeNull()
+    cleanup()
+    render(<ProfileMenu currentUser={kitchen} kitchenSession={{ endsAt: null }} />)
+    expect(screen.queryByRole('link', { name: /help/i })).toBeNull()
+  })
+})

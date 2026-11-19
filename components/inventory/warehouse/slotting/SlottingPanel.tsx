@@ -139,7 +139,7 @@ export function SlottingPanel(props: SlottingPanelProps) {
           </h2>
           <p className="mt-0.5 text-xs text-stone-500">
             <span className="font-medium tabular-nums text-stone-600">{props.binCount}</span>
-            {' bin'}{props.binCount === 1 ? '' : 's'} selected
+            {' location'}{props.binCount === 1 ? '' : 's'} selected
           </p>
         </div>
         <button
@@ -186,7 +186,7 @@ export function SlottingPanel(props: SlottingPanelProps) {
                       {props.applied.blockName} saved
                     </p>
                     <p className="mt-0.5 text-xs text-stone-500">
-                      {props.applied.binCount} bin{props.applied.binCount === 1 ? '' : 's'}
+                      {props.applied.binCount} location{props.applied.binCount === 1 ? '' : 's'}
                       {props.applied.ruleName
                         ? props.applied.ruleWasCreated
                           ? ` · new rule “${props.applied.ruleName}” points at it`

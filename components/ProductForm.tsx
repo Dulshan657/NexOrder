@@ -389,7 +389,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                     <div className="mt-3">
                         <label htmlFor="sizeFactor" className="block text-xs font-medium text-stone-500 mb-1">Slots per unit (racked capacity)</label>
                         <input type="number" name="sizeFactor" id="sizeFactor" value={formData.sizeFactor} onChange={handleChange} step="0.0001" min="0" placeholder="1" className={inputClasses} />
-                        <p className="text-[11px] text-stone-500 mt-1">Pallet/carton slots one base unit consumes — drives bin capacity warnings in racked warehouses.</p>
+                        <p className="text-[11px] text-stone-500 mt-1">Pallet/carton slots one base unit consumes — drives location capacity warnings in racked warehouses.</p>
                     </div>
                     {productToEdit && <ProductHomeBinsSection productId={productToEdit.id} />}
                     {productToEdit && <ProductWmsAttributesSection productId={productToEdit.id} />}
