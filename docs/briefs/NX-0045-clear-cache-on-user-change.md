@@ -45,3 +45,18 @@ code is on main and on Amadiya.
 - Releasing to Amadiya (next rel-* tag).
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `AuthProvider > drops cached data when the user signs out` fails on base, passes on tip | |
+| A2 | claimed | `AuthProvider > drops cached data when a different user signs in`, plus `… reloads everything as the next user after a sign-out, never keeping what loaded while signed out` | The second test was added after the first dev check: resetting at sign-out refetched with no session and cached the empty staff list, so every order read "Unknown" |
+| A3 | claimed | `AuthProvider > keeps cached data on a token refresh for the same user` | Passes on base too — a guard, not a fail-first |
+| A4 | claimed | dev `bcfcb7e`: owner signed out as Field Rep Charlie and in as Office Rep Emma in the same tab; the dashboard held 61 orders, all Emma's, none of Charlie's (read from the page) | The page's last full load was ~25s before the check, consistent with the owner's reload before signing out; not independently proven that no reload followed the sign-in |
+
+Full suite: 462 files / 7054 tests pass. `tsc --noEmit`, `lint` clean.
+
+### Not claimed
+
+- Not released to Amadiya: it ships at the next `rel-*` tag. Until then the production site still carries the leak.
+- Queries a component holds while signed out are cleared, not refetched; this relies on the signed-in app tree unmounting at sign-out (it does today: the login screen replaces it).
+- The cross-tab case (signing in as someone else in another tab) relies on supabase-js emitting the auth event in this tab; not tested.
