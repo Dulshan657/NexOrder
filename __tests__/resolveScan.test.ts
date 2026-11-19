@@ -46,6 +46,32 @@ describe('normalizeScan', () => {
   it('returns empty for whitespace-only input', () => {
     expect(normalizeScan('   \n')).toBe('')
   })
+
+  // NX-0044. An Android input method (the CipherLab RK95 can deliver scans
+  // through one) may wrap or split a code with marks that render as nothing,
+  // so "Nothing matches 4792082500139" showed a code identical to the stored one.
+  it('strips the invisible formatting marks an Android input method can insert', () => {
+    const marks = [
+      '‎', '‏', // LRM, RLM
+      '⁦', '⁧', '⁨', '⁩', // isolates
+      '⁠', // word joiner
+      '­', // soft hyphen
+      '\u0085', '\u009C', // C1 controls
+    ]
+    for (const m of marks) {
+      expect(normalizeScan(`${m}4792082500139${m}`)).toBe('4792082500139')
+      expect(normalizeScan(`479208${m}2500139`)).toBe('4792082500139')
+    }
+  })
+
+  it('folds full-width digits and letters to ASCII', () => {
+    expect(normalizeScan('４７９２０８２５００１３９')).toBe('4792082500139')
+    expect(normalizeScan('ｍａｉｎ－Ｚ１')).toBe('MAIN-Z1')
+  })
+
+  it('leaves visible characters inside a code alone', () => {
+    expect(normalizeScan('MAIN F01-R05')).toBe('MAIN F01-R05')
+  })
 })
 
 describe('barcodeVariants', () => {
