@@ -39,6 +39,7 @@ import { History, ScanLine } from 'lucide-react'
 import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl'
 import { PageFrame } from '../../components/ui/PageFrame'
 import { PageHeader } from '../../components/ui/PageHeader'
+import { HelpLink } from '../help/HelpLink'
 
 interface ReceiveStockViewProps {
   products: Product[]
@@ -638,6 +639,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       <PageHeader
         title={ADMIN_TAB_LABELS.Receiving}
         description="Pick the supplier, then scan each carton as it comes in."
+        actions={<HelpLink slug="receive-a-delivery" topic="receiving a delivery" />}
       />
 
       {received ? (

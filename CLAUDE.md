@@ -32,6 +32,7 @@ reached 173k on 2026-09-10 and was split. What stays here is the rule that must 
 | starting ANY task that will become a PR — the brief, fail-first, FINAL | [`docs/claude/briefs.md`](docs/claude/briefs.md) — **`/brief` first: committed alone, before code; its tests must fail on the base** |
 | contrast, ARIA, robots / `llms.txt`, the demo roster | [`docs/claude/accessibility.md`](docs/claude/accessibility.md) |
 | what is outstanding and what just shipped | [`docs/claude/roadmap.md`](docs/claude/roadmap.md) |
+| the public `/help` centre, the printed quick guide, help screenshots | [`docs/claude/help-centre.md`](docs/claude/help-centre.md) — **renders before AuthGate, so nothing in `components/help` may import auth or supabase**; `help:shots` writes stock and is demo-only |
 | the venue QR code, kitchen PINs, the `QR Staff` role, QR order approval | [`docs/claude/qr-reorder-plan.md`](docs/claude/qr-reorder-plan.md) — **the 2-hour limit lives in `user_horeca_id()`, not the JWT**; pending QR orders are `qr_order_requests`, never an `orders.status` |
 
 **A stub below that names a doc is not a summary you may act on alone** — it is only the

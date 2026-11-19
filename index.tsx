@@ -20,13 +20,21 @@ import { primeScanAudio } from './lib/scan/scanFeedback';
 // to `null` for a tenant without the Shop, and Rollup then drops the `import()`
 // and the whole kitchen entry screen with it. Gate the DECLARATION -- a JSX gate
 // alone would still emit the chunk. See lib/modules.ts.
-import { MODULE_SHOP } from './lib/modules';
+import { MODULE_INVENTORY_DISPATCH, MODULE_SHOP } from './lib/modules';
 import { readQrToken } from './lib/qr/qrLink';
+import { parseHelpPath } from './lib/help/helpRoute';
+import { parseHelpAudience } from './lib/help/helpAudience';
 
 // A venue's printed QR opens `/?qr=<token>`. The screen is lazy: it is only ever
 // needed on that URL, and kitchens on a flaky connection should not pay for it on
 // every normal load.
 const QrEntryScreen = MODULE_SHOP ? lazyWithRetry(() => import('./components/qr/QrEntryScreen')) : null;
+
+// The public help centre at /help (NX-0038). Its only guide is the warehouse one,
+// so it ships only where `inventory_dispatch` does -- gated at the DECLARATION,
+// like QrEntryScreen above, so a tenant without the module carries no help chunk.
+// Every article is in this one chunk: the print view needs them all at once.
+const HelpCentre = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./components/help/HelpCentre')) : null;
 
 // Popup OAuth completion handshake.
 //
@@ -197,6 +205,21 @@ function Root() {
       window.removeEventListener('keydown', prime, true);
     };
   }, []);
+
+  // The help centre is public, and is read from a link -- an email, the printed
+  // guide, a new tab opened from the app. It sits ahead of the set-password check
+  // on purpose: a pending password marker must not turn a help link into the
+  // password screen, and nothing on these pages touches the session.
+  const helpRoute = HelpCentre ? parseHelpPath(window.location.pathname) : null;
+  if (HelpCentre && helpRoute) {
+    return (
+      <ErrorBoundary label="Help">
+        <Suspense fallback={<div className="min-h-svh bg-stone-50" />}>
+          <HelpCentre route={helpRoute} audience={parseHelpAudience(window.location.search)} />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
 
   if (screen === 'set-password') {
     return <ResetPasswordView onComplete={() => setScreen('app')} />;

@@ -1,0 +1,52 @@
+/* The printed Receipt & Putaway quick guide (NX-0038).
+ *
+ * NAMED pages, never a bare @page: this stylesheet loads with the help chunk,
+ * and a bare rule would put the guide's footer on anything else the app prints
+ * in that tab. `guide-cover` is full-bleed (no margin, no footer); `guide` is
+ * A4 with a running footer drawn in the page margin, so the content never has to
+ * leave room for it. Chromium supports both named pages and margin boxes, which
+ * is all `page.pdf()` and the browser's own Print need.
+ */
+
+@page guide-cover {
+  size: A4;
+  margin: 0;
+}
+
+@page guide {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+
+  @bottom-left {
+    content: 'Nex Order · Receipt & Putaway Quick Guide';
+    font: 9pt 'DM Sans', sans-serif;
+    color: #57534e;
+  }
+  @bottom-right {
+    content: 'Page ' counter(page);
+    font: 9pt 'DM Sans', sans-serif;
+    color: #57534e;
+  }
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .help-print-cover {
+    page: guide-cover;
+    width: 210mm;
+    height: 297mm;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .help-print-body {
+    page: guide;
+  }
+}

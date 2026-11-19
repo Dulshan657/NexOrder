@@ -17,6 +17,7 @@ import PutawayWalkView from './PutawayWalkView';
 import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
 import { PageFrame } from '../ui/PageFrame';
 import { PageHeader } from '../ui/PageHeader';
+import { HelpLink } from '../help/HelpLink';
 import { PageTabs } from '../ui/PageTabs';
 
 type Stage = 'assign' | 'walk';
@@ -129,10 +130,12 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
         title={ADMIN_TAB_LABELS.Putaway}
         description="Move received stock from the dock into its locations."
         actions={
-          // Clamped for the reason spelled out in StocktakePage: a native
-          // <select> sizes to its widest OPTION, so this ran 53px off a 360px
-          // screen and worsened with every site added. `min-w-0` is what lets
-          // `max-w-full` bite.
+          <>
+          <HelpLink slug="put-a-pallet-away" topic="putting a pallet away" />
+          {/* Clamped for the reason spelled out in StocktakePage: a native
+              <select> sizes to its widest OPTION, so this ran 53px off a 360px
+              screen and worsened with every site added. `min-w-0` is what lets
+              `max-w-full` bite. */}
           <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
             <span className="shrink-0 font-medium">Warehouse</span>
             <select
@@ -148,6 +151,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
               ))}
             </select>
           </label>
+          </>
         }
       />
 
