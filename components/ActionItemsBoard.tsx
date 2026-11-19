@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ChevronDown, ChevronUp, X, Clock, UserPlus, CheckCircle, ArrowRight } from 'lucide-react';
+import { ChevronDown, X, Clock, UserPlus, CheckCircle, ArrowRight, ChevronRight } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { User } from '../types';
 import { UserRole } from '../types';
@@ -43,7 +43,9 @@ interface ActionItemsBoardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Persisted board state
+// Persisted board state. The SHAPE and the storage keys callers pass
+// (`admin_action_items`, `rep_action_items`) are what an operator's dismissed
+// and snoozed items live under — changing either silently resurrects them.
 // ---------------------------------------------------------------------------
 
 interface BoardState {
@@ -61,26 +63,56 @@ const defaultBoardState: BoardState = {
 };
 
 // ---------------------------------------------------------------------------
-// Severity style maps
+// Severity style maps. Colour is a small dot and a count; the panel stays calm.
 // ---------------------------------------------------------------------------
 
-const severityBorderLeft: Record<AlertSeverity, string> = {
-  critical: 'border-l-4 border-l-red-500',
-  warning: 'border-l-4 border-l-amber-500',
-  info: 'border-l-4 border-l-blue-500',
+const severityDot: Record<AlertSeverity, string> = {
+  critical: 'bg-red-500',
+  warning: 'bg-amber-500',
+  info: 'bg-nexgen-blue',
 };
 
-const severityBadgeBg: Record<AlertSeverity, string> = {
-  critical: 'bg-red-500 text-white',
-  warning: 'bg-amber-500 text-white',
-  info: 'bg-blue-500 text-white',
+const severityCount: Record<AlertSeverity, string> = {
+  critical: 'bg-red-50 text-red-700',
+  warning: 'bg-amber-50 text-amber-800',
+  info: 'bg-nexgen-blue-light text-nexgen-blue-dark',
 };
 
 const severityIconColor: Record<AlertSeverity, string> = {
-  critical: 'text-red-500',
-  warning: 'text-amber-500',
-  info: 'text-blue-500',
+  critical: 'text-red-600',
+  warning: 'text-amber-600',
+  info: 'text-nexgen-blue-dark',
 };
+
+// Small icon buttons for the per-row housekeeping. Always present in the DOM and
+// in the tab order; on a pointer device they fade in on row hover or focus, and
+// on touch (no hover) they are simply visible.
+const housekeepingBtn =
+  'inline-flex items-center justify-center rounded-md p-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors duration-150 cursor-pointer touch-target';
+
+// ---------------------------------------------------------------------------
+// useOutsideClose — one popover helper for Snooze and Assign
+// ---------------------------------------------------------------------------
+
+function useOutsideClose(open: boolean, close: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent): void {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    }
+    function handleKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') close();
+    }
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open, close]);
+  return ref;
+}
 
 // ---------------------------------------------------------------------------
 // SnoozeButton
@@ -88,6 +120,7 @@ const severityIconColor: Record<AlertSeverity, string> = {
 
 interface SnoozeButtonProps {
   itemId: string;
+  itemTitle: string;
   onSnooze: (itemId: string, expiryIso: string) => void;
 }
 
@@ -98,22 +131,10 @@ const SNOOZE_OPTIONS: { label: string; days: number }[] = [
   { label: '14 days', days: 14 },
 ];
 
-const SnoozeButton: React.FC<SnoozeButtonProps> = ({ itemId, onSnooze }) => {
+const SnoozeButton: React.FC<SnoozeButtonProps> = ({ itemId, itemTitle, onSnooze }) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function handleOutsideClick(e: MouseEvent): void {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose(open, close);
 
   function handleSelect(days: number): void {
     const expiry = new Date(Date.now() + days * 86_400_000).toISOString();
@@ -125,16 +146,18 @@ const SnoozeButton: React.FC<SnoozeButtonProps> = ({ itemId, onSnooze }) => {
     <div ref={ref} className="relative">
       <button
         type="button"
+        aria-label={`Snooze ${itemTitle}`}
+        aria-expanded={open}
+        title="Snooze"
         onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev); }}
-        className="text-[10px] text-stone-500 hover:text-amber-500 flex items-center gap-0.5"
+        className={housekeepingBtn}
       >
-        <Clock className="w-3 h-3" />
-        Snooze
+        <Clock className="w-3.5 h-3.5" aria-hidden="true" />
       </button>
 
       {open && (
         <div
-          className="absolute bottom-full left-0 mb-1 z-50 bg-white border border-stone-200 rounded-lg shadow-lg py-1 min-w-[100px]"
+          className="absolute top-full right-0 mt-1 z-50 bg-white border border-stone-200 rounded-lg shadow-lg py-1 min-w-[112px]"
           onClick={(e) => e.stopPropagation()}
         >
           {SNOOZE_OPTIONS.map((opt) => (
@@ -142,7 +165,7 @@ const SnoozeButton: React.FC<SnoozeButtonProps> = ({ itemId, onSnooze }) => {
               key={opt.days}
               type="button"
               onClick={() => handleSelect(opt.days)}
-              className="w-full text-left px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50"
+              className="w-full text-left px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50 touch-target-y"
             >
               {opt.label}
             </button>
@@ -161,28 +184,17 @@ const REP_ROLES: UserRole[] = [UserRole.FIELD_REP, UserRole.OFFICE_REP];
 
 interface AssignButtonProps {
   itemId: string;
+  itemTitle: string;
   users: User[];
   currentAssigneeId?: number;
   onAssign: (itemId: string, userId: number) => void;
 }
 
-const AssignButton: React.FC<AssignButtonProps> = ({ itemId, users, currentAssigneeId, onAssign }) => {
+const AssignButton: React.FC<AssignButtonProps> = ({ itemId, itemTitle, users, currentAssigneeId, onAssign }) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose(open, close);
   const repUsers = users.filter((u) => REP_ROLES.includes(u.role));
-
-  useEffect(() => {
-    if (!open) return;
-
-    function handleOutsideClick(e: MouseEvent): void {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [open]);
 
   const currentAssignee = currentAssigneeId !== undefined
     ? users.find((u) => u.id === currentAssigneeId)
@@ -198,30 +210,35 @@ const AssignButton: React.FC<AssignButtonProps> = ({ itemId, users, currentAssig
 
   if (currentAssignee) {
     return (
-      <span className="text-[10px] text-stone-500 flex items-center gap-0.5">
-        <UserPlus className="w-3 h-3" />
+      <span className="inline-flex items-center gap-1 rounded-md bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-700">
+        <UserPlus className="w-3 h-3" aria-hidden="true" />
         {currentAssignee.name}
       </span>
     );
   }
 
+  if (repUsers.length === 0) return null;
+
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
+        aria-label={`Assign ${itemTitle}`}
+        aria-expanded={open}
+        title="Assign"
         onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev); }}
-        className="text-[10px] text-stone-500 hover:text-blue-500 flex items-center gap-0.5"
+        className={housekeepingBtn}
       >
-        <UserPlus className="w-3 h-3" />
-        Assign
+        <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
       </button>
 
       {open && (
         <div
-          className="absolute bottom-full left-0 mb-1 z-50 bg-white border border-stone-200 rounded-lg shadow-lg p-1 min-w-[140px]"
+          className="absolute top-full right-0 mt-1 z-50 bg-white border border-stone-200 rounded-lg shadow-lg p-1 min-w-[160px]"
           onClick={(e) => e.stopPropagation()}
         >
           <select
+            aria-label={`Assign ${itemTitle} to`}
             size={Math.min(repUsers.length + 1, 6)}
             className="w-full text-xs text-stone-700 border-none outline-none bg-transparent"
             onChange={handleChange}
@@ -252,6 +269,22 @@ interface ActionItemRowProps {
   onAssign: (id: string, userId: number) => void;
 }
 
+function RowText({ item }: { item: ActionItem }) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="truncate text-sm text-stone-800">{item.title}</span>
+        {item.badge && (
+          <span className={`text-[11px] px-1.5 py-0.5 rounded-md border shrink-0 ${item.badge.color}`}>
+            {item.badge.label}
+          </span>
+        )}
+      </span>
+      {item.subtitle && <span className="block truncate text-xs text-stone-500 mt-0.5">{item.subtitle}</span>}
+    </span>
+  );
+}
+
 const ActionItemRow: React.FC<ActionItemRowProps> = ({
   item,
   showAssign,
@@ -262,69 +295,66 @@ const ActionItemRow: React.FC<ActionItemRowProps> = ({
   onAssign,
 }) => {
   return (
-    <div
-      onClick={item.onClick}
-      className={`group px-4 py-2.5 hover:bg-stone-50 border-b border-stone-100 last:border-b-0 ${item.onClick ? 'cursor-pointer' : ''}`}
-    >
-      {/* Main row content */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-sm text-stone-800 truncate">{item.title}</span>
-          {item.badge && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${item.badge.color}`}>
-              {item.badge.label}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 ml-2">
-          {item.subtitle && (
-            <span className="text-xs text-stone-500">{item.subtitle}</span>
-          )}
-          {item.actions?.map((action) => {
-            const variantClass =
-              action.variant === 'primary'
-                ? 'text-blue-600 hover:text-blue-800'
-                : action.variant === 'danger'
-                ? 'text-red-500 hover:text-red-700'
-                : 'text-stone-500 hover:text-stone-800';
-
-            return (
-              <button
-                key={action.label}
-                type="button"
-                onClick={(e) => { e.stopPropagation(); action.onClick(); }}
-                className={`text-xs font-medium ${variantClass} flex items-center gap-0.5`}
-              >
-                <action.icon className="w-3 h-3" />
-                {action.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* System actions — shown on hover */}
-      <div className="hidden group-hover:flex items-center gap-2 mt-1.5 pt-1.5 border-t border-stone-100">
+    <div className="group flex items-center gap-1 px-2 py-1 border-b border-stone-100 last:border-b-0 hover:bg-stone-50/70 transition-colors duration-150">
+      {/* The row's destination. A row with nowhere to go is plain text, not a button. */}
+      {item.onClick ? (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }}
-          className="text-[10px] text-stone-500 hover:text-red-500 flex items-center gap-0.5"
+          onClick={item.onClick}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left cursor-pointer touch-target-y"
         >
-          <X className="w-3 h-3" />
-          Dismiss
+          <RowText item={item} />
+          <ChevronRight
+            className="w-4 h-4 shrink-0 text-stone-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+            aria-hidden="true"
+          />
         </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5">
+          <RowText item={item} />
+        </div>
+      )}
 
-        <SnoozeButton itemId={item.id} onSnooze={onSnooze} />
+      {item.actions?.map((action) => {
+        const variantClass =
+          action.variant === 'danger'
+            ? 'text-red-700 hover:bg-red-50'
+            : 'text-nexgen-blue-dark hover:bg-nexgen-blue-light';
 
+        return (
+          <button
+            key={action.label}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); action.onClick(); }}
+            className={`shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${variantClass} transition-colors duration-150 cursor-pointer touch-target-y`}
+          >
+            {action.label}
+            <action.icon className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        );
+      })}
+
+      {/* Housekeeping: always in the tab order, revealed on hover/focus on desktop. */}
+      <div className="flex shrink-0 items-center gap-0.5 transition-opacity duration-150 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
         {showAssign && users.length > 0 && (
           <AssignButton
             itemId={item.id}
+            itemTitle={item.title}
             users={users}
             currentAssigneeId={assigneeId}
             onAssign={onAssign}
           />
         )}
+        <SnoozeButton itemId={item.id} itemTitle={item.title} onSnooze={onSnooze} />
+        <button
+          type="button"
+          aria-label={`Dismiss ${item.title}`}
+          title="Dismiss"
+          onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }}
+          className={housekeepingBtn}
+        >
+          <X className="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
@@ -358,24 +388,26 @@ const ColumnPanel: React.FC<ColumnPanelProps> = ({
   const Icon = column.icon;
 
   return (
-    <div className={`flex flex-col ${severityBorderLeft[column.severity]}`}>
+    <div className="flex flex-col min-w-0">
       {/* Column header */}
-      <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-2">
-        <Icon className={`w-4 h-4 shrink-0 ${severityIconColor[column.severity]}`} />
-        <span className="text-xs font-semibold text-stone-700 uppercase tracking-wide">
-          {column.label}
-        </span>
+      <div className="px-4 py-3 flex items-center gap-2">
+        <Icon className={`w-4 h-4 shrink-0 ${severityIconColor[column.severity]}`} aria-hidden="true" />
+        <span className="text-[13px] font-semibold text-stone-800 truncate">{column.label}</span>
         {visibleItems.length > 0 && (
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto ${severityBadgeBg[column.severity]}`}>
+          <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded-md ${severityCount[column.severity]}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${severityDot[column.severity]}`} aria-hidden="true" />
             {visibleItems.length}
           </span>
         )}
       </div>
 
       {/* Scrollable item list */}
-      <div className="max-h-[300px] overflow-y-auto action-items-scroll flex-1">
+      <div className="max-h-[300px] overflow-y-auto action-items-scroll flex-1 border-t border-stone-100">
         {visibleItems.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-stone-500">No items</div>
+          <div className="flex items-center justify-center gap-1.5 px-4 py-6 text-xs text-stone-500">
+            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+            Nothing here
+          </div>
         ) : (
           visibleItems.map((item) => (
             <ActionItemRow
@@ -394,14 +426,14 @@ const ColumnPanel: React.FC<ColumnPanelProps> = ({
 
       {/* Column footer */}
       {column.onViewAll && (
-        <div className="border-t border-stone-100">
+        <div className="border-t border-stone-100 px-2 py-1">
           <button
             type="button"
             onClick={column.onViewAll}
-            className="w-full text-left text-xs text-blue-600 hover:text-blue-800 px-4 py-2 flex items-center gap-1 font-medium"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-nexgen-blue-dark hover:bg-stone-50 transition-colors duration-150 cursor-pointer touch-target-y"
           >
-            View All
-            <ArrowRight className="w-3 h-3" />
+            View all
+            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
       )}
@@ -442,6 +474,9 @@ const ActionItemsBoard: React.FC<ActionItemsBoardProps> = ({
   }));
 
   const totalVisible = visibleItemsByColumn.reduce((sum, { items }) => sum + items.length, 0);
+  const criticalVisible = visibleItemsByColumn
+    .filter(({ column }) => column.severity === 'critical')
+    .reduce((sum, { items }) => sum + items.length, 0);
 
   // ---------------------------------------------------------------------------
   // State updaters — all immutable
@@ -478,47 +513,53 @@ const ActionItemsBoard: React.FC<ActionItemsBoardProps> = ({
   // Render
   // ---------------------------------------------------------------------------
 
+  const bodyId = `${storageKey}-body`;
+
   return (
-    <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+    <section className="dash-card overflow-hidden">
       {/* Title bar — always visible */}
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         onClick={handleToggleCollapse}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleToggleCollapse(); }}
-        className="px-5 py-3.5 flex items-center justify-between cursor-pointer hover:bg-stone-50 transition-colors duration-150 select-none"
         aria-expanded={!state.collapsed}
+        aria-controls={bodyId}
+        className="w-full px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-stone-50/70 transition-colors duration-150"
       >
-        {/* Left: icon + title + total badge */}
-        <div className="flex items-center gap-2.5">
-          <span className="text-sm font-semibold text-stone-800">{title}</span>
-          {totalVisible > 0 && (
-            <span className="text-[11px] font-bold bg-stone-700 text-white px-2 py-0.5 rounded-full">
-              {totalVisible}
+        <span className="flex items-center gap-2.5 min-w-0">
+          <span className="text-sm font-semibold text-stone-900">{title}</span>
+          {totalVisible > 0 ? (
+            <span className="text-xs text-stone-600 tabular-nums">
+              {totalVisible} open
+              {criticalVisible > 0 && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden="true" />
+                  {criticalVisible} urgent
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+              <CheckCircle className="w-3.5 h-3.5" aria-hidden="true" />
+              All clear
             </span>
           )}
-        </div>
-
-        {/* Right: collapse toggle */}
-        {state.collapsed ? (
-          <ChevronDown className="w-4 h-4 text-stone-500" />
-        ) : (
-          <ChevronUp className="w-4 h-4 text-stone-500" />
-        )}
-      </div>
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 shrink-0 text-stone-500 transition-transform duration-200 ${state.collapsed ? '' : 'rotate-180'}`}
+          aria-hidden="true"
+        />
+      </button>
 
       {/* Collapsible body */}
       {!state.collapsed && (
-        <div className="border-t border-stone-200 transition-all duration-200">
+        <div id={bodyId} className="border-t border-stone-200/80">
           {totalVisible === 0 ? (
-            // All-clear state
-            <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 text-emerald-700 text-sm">
-              <CheckCircle className="w-4 h-4 shrink-0" />
-              All clear — no action items right now.
+            <div className="flex items-center gap-2 px-5 py-4 text-sm text-stone-600">
+              <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" aria-hidden="true" />
+              Nothing needs your attention right now.
             </div>
           ) : (
-            // Column grid
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-stone-200">
+            <div className={`grid grid-cols-1 divide-y sm:divide-y-0 sm:divide-x divide-stone-100 ${columns.length >= 3 ? 'sm:grid-cols-3' : columns.length === 2 ? 'sm:grid-cols-2' : ''}`}>
               {visibleItemsByColumn.map(({ column, items }) => (
                 <ColumnPanel
                   key={column.id}
@@ -536,7 +577,7 @@ const ActionItemsBoard: React.FC<ActionItemsBoardProps> = ({
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 };
 
