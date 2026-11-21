@@ -41,7 +41,15 @@ describe('get_sales_summary', () => {
     ordersByStatus: Array<{ status: string; count: number }>
     topCustomers: Array<{ horecaId: number; name: string; revenue: number }>
     topProducts: Array<{ name: string; units: number }>
-    previous?: { label: string; revenue: number; orderCount: number; deltaPercent: number | null; orderCountDeltaPercent: number | null }
+    previous?: {
+      label: string
+      revenue: number
+      orderCount: number
+      deltaPercent: number | null
+      orderCountDeltaPercent: number | null
+      noOrdersBefore?: string
+    }
+    noOrdersBefore?: string
   }
 
   const summary = (args: Record<string, unknown>, ctx?: VoiceToolContext): Sales =>
@@ -118,6 +126,14 @@ describe('get_sales_summary', () => {
       expect(JSON.stringify(data)).not.toMatch(/NaN|Infinity/)
     })
 
+    it('marks a previous period before the first recorded order', () => {
+      // 22 to 31 Aug holds O1 (23 Aug); the ten days before it, 12 to 21 Aug, predate every order.
+      const data = summary({ period: 'custom', from: '2026-08-22', to: '2026-08-31' })
+      expect(data.previous?.noOrdersBefore).toBe('2026-08-23')
+      expect(data.noOrdersBefore).toBeUndefined()
+      expect(summary({ period: 'last_30_days' }).previous?.noOrdersBefore).toBeUndefined()
+    })
+
     it('is left out when compare_previous is false', () => {
       expect(summary({ period: 'last_30_days', compare_previous: false }).previous).toBeUndefined()
     })
@@ -130,6 +146,13 @@ describe('get_sales_summary', () => {
   it('answers an empty period with zeros, not an error', () => {
     const data = summary({ period: 'custom', from: '2026-01-01', to: '2026-01-31' })
     expect(data).toMatchObject({ revenue: 0, orderCount: 0, averageOrderValue: 0, newCustomers: 0, topCustomers: [], topProducts: [] })
+  })
+
+  it('marks a period that ends before the first recorded order', () => {
+    // The first order is O1, 58 days before NOW: 23 Aug 2026 in Sydney. January has
+    // no orders because there is no history yet, not because sales fell to zero.
+    expect(summary({ period: 'custom', from: '2026-01-01', to: '2026-01-31' }).noOrdersBefore).toBe('2026-08-23')
+    expect(summary({ period: 'last_30_days' }).noOrdersBefore).toBeUndefined()
   })
 
   it('narrows to one customer and says so', () => {
@@ -418,8 +441,18 @@ describe('get_customer_insights', () => {
     lastOrderDate: string | null
     topProducts: Array<{ name: string; orderCount: number; avgQuantityPerOrder: number; isOverdue: boolean }>
     spendingTrends: Array<{ month: string; totalSpend: number; orderCount: number }>
+    lastOrder: { orderId: string; date: string; status: string; total: number; lines: Array<{ name: string; quantity: number }> } | null
   }
   const insights = (id: number, ctx?: VoiceToolContext): Insights => dataOf<Insights>(run('get_customer_insights', { horeca_id: id }, ctx))
+
+  it('returns the last order with its lines', () => {
+    // Harbour Cafe's latest is O8, 8 days ago (12 Oct): 30 Red Curry Paste at $4, still dispatched.
+    expect(insights(C1.id).lastOrder).toEqual({
+      orderId: 'O8', date: '2026-10-12', status: 'dispatched', total: 120, lines: [{ name: 'Red Curry Paste', quantity: 30 }],
+    })
+    // Bayside's O13 (yesterday) is cancelled, so its last real order is O3: 14 Coconut Milk, 40 days ago.
+    expect(insights(C2.id).lastOrder).toMatchObject({ orderId: 'O3', date: '2026-09-10', lines: [{ name: 'Coconut Milk', quantity: 14 }] })
+  })
 
   it('refuses a customer it has never heard of', () => {
     expect(run('get_customer_insights', { horeca_id: 9999 })).toEqual({ ok: false, error: 'Unknown customer' })
@@ -706,27 +739,44 @@ describe('get_product_movement', () => {
 
 describe('get_visit_stats', () => {
   interface Stats {
-    planned: number
-    completed: number
-    skipped: number
-    completionRate: number
-    visits: number
-    ordersPlaced: number
+    visitsLogged: number
+    visitsWithOrder: number
     conversionRate: number
+    routeStops?: { planned: number; arrived: number; skipped: number; rate: number }
   }
   const stats = (period: string, ctx?: VoiceToolContext): Stats => dataOf<Stats>(run('get_visit_stats', { period }, ctx ?? ctxFor(REP_A)))
 
   it('reports a month of routes and visits', () => {
     // Routes R1 (2 stops: 1 arrived, 1 skipped) and R2 (2 stops: 1 arrived, 1 pending); visits V1 and V2, one an order.
-    expect(stats('this_month')).toEqual({ planned: 4, completed: 2, skipped: 1, completionRate: 50, visits: 2, ordersPlaced: 1, conversionRate: 50 })
+    expect(stats('this_month')).toEqual({
+      visitsLogged: 2, visitsWithOrder: 1, conversionRate: 50, routeStops: { planned: 4, arrived: 2, skipped: 1, rate: 50 },
+    })
   })
 
   it('reports this week on its own', () => {
-    expect(stats('this_week')).toEqual({ planned: 2, completed: 1, skipped: 0, completionRate: 50, visits: 1, ordersPlaced: 0, conversionRate: 0 })
+    expect(stats('this_week')).toEqual({
+      visitsLogged: 1, visitsWithOrder: 0, conversionRate: 0, routeStops: { planned: 2, arrived: 1, skipped: 0, rate: 50 },
+    })
   })
 
   it('reports an empty month as zeros', () => {
-    expect(stats('last_month')).toEqual({ planned: 0, completed: 0, skipped: 0, completionRate: 0, visits: 0, ordersPlaced: 0, conversionRate: 0 })
+    expect(stats('last_month')).toEqual({ visitsLogged: 0, visitsWithOrder: 0, conversionRate: 0 })
+  })
+
+  it('reports logged visits apart from route stops', () => {
+    // Charlie on dev, 2026-10-29: 28 visits logged, no route, told "you completed 0 visits".
+    // With no routes, the two visits still count and nothing reads as a completed zero.
+    const data = stats('this_month', ctxFor(REP_A, { routes: deepFreeze([]) }))
+    expect(data.visitsLogged).toBe(2)
+    expect(data.visitsWithOrder).toBe(1)
+    expect(data).not.toHaveProperty('completed')
+    expect(data).not.toHaveProperty('planned')
+  })
+
+  it('has no stop counts when no route was planned', () => {
+    const data = stats('this_month', ctxFor(REP_A, { routes: deepFreeze([]) }))
+    expect(data).not.toHaveProperty('routeStops')
+    expect(basisOf(run('get_visit_stats', { period: 'this_month' }, ctxFor(REP_A, { routes: deepFreeze([]) })))).toMatch(/no route/)
   })
 
   it('counts only the caller\'s own routes and visits', () => {
@@ -734,7 +784,7 @@ describe('get_visit_stats', () => {
     const extraVisit: Visit = { id: 'V8', hoReCaId: C3.id, userId: REP_B.id, arrivalTime: '2026-10-19T12:00:00.000Z', outcome: 'order_placed', photos: [], createdAt: iso(1) }
     const ctx = ctxFor(REP_A, { routes: deepFreeze([...ctxFor(REP_A).routes, extraRoute]), visits: deepFreeze([...buildVisits(), extraVisit]) })
     expect(stats('this_month', ctx)).toEqual(stats('this_month'))
-    expect(stats('this_month', ctxFor(REP_B, { routes: ctx.routes, visits: ctx.visits }))).toMatchObject({ planned: 1, visits: 1, ordersPlaced: 1 })
+    expect(stats('this_month', ctxFor(REP_B, { routes: ctx.routes, visits: ctx.visits }))).toMatchObject({ routeStops: { planned: 1 }, visitsLogged: 1, visitsWithOrder: 1 })
   })
 
   it('names the period and whose visits in the basis', () => {

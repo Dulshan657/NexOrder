@@ -37,7 +37,33 @@ function revenueAndCount(mctx: MetricContext, filter: OrderFilter): { revenue: n
   }
 }
 
-function previousPeriod(mctx: MetricContext, scope: OrderFilter, span: DateWindow, current: { revenue: number; orderCount: number }) {
+/**
+ * The first order in scope, any date, or null. A window that ends before it is
+ * not a quiet period, it is one the records do not cover: "the same month last
+ * year" on a database that starts in December was read out as growth from zero
+ * (dev, 2026-10-29). Cancelled orders are left out, as in every metric.
+ */
+function firstOrderAt(orders: VoiceToolContext['orders'], scope: OrderFilter): Date | null {
+  let first = Number.POSITIVE_INFINITY
+  for (const order of filterOrders(orders, scope)) {
+    const at = new Date(order.orderDate).getTime()
+    if (at < first) first = at
+  }
+  return Number.isFinite(first) ? new Date(first) : null
+}
+
+/** `{ noOrdersBefore }` when the window ends before the first recorded order, else nothing. */
+function historyMark(span: DateWindow, first: Date | null): { noOrdersBefore?: string } {
+  return first && span.to.getTime() < first.getTime() ? { noOrdersBefore: localYmd(first) } : {}
+}
+
+function previousPeriod(
+  mctx: MetricContext,
+  scope: OrderFilter,
+  span: DateWindow,
+  current: { revenue: number; orderCount: number },
+  first: Date | null,
+) {
   const before = revenueAndCount(mctx, window(scope, span))
   return {
     label: formatRange(span.from, span.to),
@@ -45,6 +71,7 @@ function previousPeriod(mctx: MetricContext, scope: OrderFilter, span: DateWindo
     orderCount: before.orderCount,
     deltaPercent: percentChange(current.revenue, before.revenue),
     orderCountDeltaPercent: percentChange(current.orderCount, before.orderCount),
+    ...historyMark(span, first),
   }
 }
 
@@ -73,6 +100,7 @@ export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceT
   const filter = window(scope, period)
 
   const current = revenueAndCount(mctx, filter)
+  const first = firstOrderAt(ctx.orders, scope)
   const orderStatus = evaluateMetric<StatusCount[]>('sales.ordersByStatus', mctx, filter)
   const topCustomers = evaluateMetric<CustomerRevenue[]>('sales.revenueByCustomer', mctx, filter)
   // Units in BASE units: sales.unitsByProduct sums quantity as entered, so a carton
@@ -92,8 +120,9 @@ export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceT
     ordersByStatus: orderStatus.filter((s) => s.count > 0).map((s) => ({ status: s.status, count: s.count })),
     topCustomers: topCustomers.slice(0, TOP_N).map((c) => ({ horecaId: c.horecaId, name: c.name, revenue: dollars(c.revenue) })),
     topProducts: topProducts.slice(0, TOP_N).map((p) => ({ name: p.name, units: p.units })),
-    ...(args.compare_previous ? { previous: previousPeriod(mctx, scope, period.previous, current) } : {}),
+    ...(args.compare_previous ? { previous: previousPeriod(mctx, scope, period.previous, current, first) } : {}),
     ...(current.orderCount === 0 ? { latestOrderDate: latestOrderDate(ctx.orders, scope, period.to) } : {}),
+    ...historyMark(period, first),
   }
 
   const forCustomer = customer ? `, for ${customer.name}` : ''

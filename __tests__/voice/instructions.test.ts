@@ -76,6 +76,29 @@ describe('buildInstructions', () => {
     for (const role of ROLES) expect(build({ role, modules: EVERY_MODULE }).length).toBeLessThan(MAX_INSTRUCTION_CHARS)
   })
 
+  it('names the comparison dates', () => {
+    // On dev, 2026-10-29: a 2 to 30 Sep window was read out as "last month".
+    const text = flat(build())
+    expect(text).toContain('name its dates from previous.label')
+    expect(text).toContain('never call a partial period "last month" or "last week"')
+  })
+
+  it('says the history does not reach back instead of calling it growth', () => {
+    // On dev, 2026-10-29: "up on last year, because there were no sales then".
+    const text = flat(build())
+    expect(text).toContain('noOrdersBefore')
+    expect(text).toContain('the records only start on that date')
+    expect(text).toContain('never call it growth or a fall')
+  })
+
+  it('answers the last order from its lines', () => {
+    // On dev, 2026-10-29: "items like..." read from the customer's usual products.
+    const text = flat(build())
+    expect(text).toContain('lastOrder')
+    expect(text).toContain('never from their usual products')
+    for (const role of ROLES) expect(build({ role, modules: EVERY_MODULE }).length).toBeLessThan(MAX_INSTRUCTION_CHARS)
+  })
+
   it('states the currency and language', () => {
     expect(flat(build())).toContain('Amounts are Australian dollars. Speak English.')
   })

@@ -374,4 +374,33 @@ The function answers 403 `The voice assistant module is not enabled` until the p
 function (a warm isolate does not re-read secrets). A release to a tenant is a separate owner
 step, done from the tenant workspace on a `rel-*` tag; nothing in this doc is run from here.
 
+## The golden questions (NX-0012)
+
+```bash
+npm run nex:golden:dev                    # every case, one session per role; report under test-results/nex-golden/
+npm run nex:golden:dev -- --only=rep-visits-this-month,admin-seaside-last-order
+```
+
+`__tests__/voice/golden/questions.json` holds real questions, first asked on dev on 2026-10-29.
+Each case says which tools Nex must call and which facts it must state, written as **paths into
+the tool output** (`get_visit_stats.visitsLogged`). The expected value is therefore whatever dev's
+data says on the day, and a case never goes stale. `lib/voice/golden/score.ts` also fails any
+number in the answer that no tool returned (Nex does no arithmetic of its own), a `refuse` case
+that was answered, and an `avoids` pattern. Cases marked `refuse` are things Nex cannot answer
+YET. A PR that adds the tool turns its case into an answerable one, and scores the change.
+
+It is an instrument like NX-0009's voice spec: it spends the demo users' voice minutes (about
+10 of each user's 30 a day) and depends on a language model, so it never runs in CI. CI runs only
+the scorer's and the question set's unit tests. Run it before and after any change to the
+instructions or the tools, and quote both scores in the PR.
+
+What the first run found (all tool numbers right; these answers misled, fixed in NX-0012):
+- "You completed 0 visits" to a rep with 28 logged. Visits and route stops were one field.
+  `get_visit_stats` now keeps them apart, and has no stop counts when no route was planned.
+- "Up on last year, because there were no sales then", on data that starts in Dec 2025.
+  `get_sales_summary` now sets `noOrdersBefore`.
+- "What did they order last time?" was answered from the usual products. `get_customer_insights`
+  now returns `lastOrder` with its lines.
+- A 2–30 Sep comparison window was read out as "last month". Nex now names `previous.label`.
+
 Tests: `__tests__/voice/` (contracts, tools, hook, sheet, launcher, purity, gate imports).

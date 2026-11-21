@@ -80,7 +80,7 @@ const horecaIdProperty = {
 
 const SALES_SUMMARY = defineTool(
   'get_sales_summary',
-  'Revenue, orders placed (orderCount, by order date), orders shipped (shippedCount: first dispatched or delivered in the period, by ship date, split into shippedByStatus), orders still in the warehouse now (stillInWarehouse), average order value, new customers, orders by status, top 5 customers and top 5 products for a period, with the previous period for comparison. For sales reps the scope is always their own orders. Set horeca_id to scope to one customer (resolve it with find_customer first).',
+  'Revenue, orders placed (orderCount, by order date), orders shipped (shippedCount: first dispatched or delivered in the period, by ship date, split into shippedByStatus), orders still in the warehouse now (stillInWarehouse), average order value, new customers, orders by status, top 5 customers and top 5 products for a period, with the previous period for comparison (previous.label gives its dates). noOrdersBefore is set, on the period or on previous, when it ends before the first order on record. For sales reps the scope is always their own orders. Set horeca_id to scope to one customer (resolve it with find_customer first).',
   {
     period: {
       type: 'string',
@@ -125,7 +125,7 @@ const FIND_CUSTOMER = defineTool(
 
 const CUSTOMER_INSIGHTS = defineTool(
   'get_customer_insights',
-  "One customer's buying pattern: segment, total orders and spend, average days between orders, predicted next order date, days since last order, spend trend, and their top products with whether each is overdue.",
+  "One customer's buying pattern: segment, total orders and spend, average days between orders, predicted next order date, days since last order, spend trend, their top products with whether each is overdue, and lastOrder: their most recent order with its date, status, total and lines.",
   horecaIdProperty,
   ['horeca_id'],
 )
@@ -183,7 +183,7 @@ const PRODUCT_MOVEMENT = defineTool(
 
 const VISIT_STATS = defineTool(
   'get_visit_stats',
-  "A field rep's own visits for the period: planned, completed, skipped, completion rate, and how many visits produced an order.",
+  "A field rep's own visits for the period: visitsLogged (visits they recorded), visitsWithOrder and conversionRate. routeStops (planned, arrived, skipped) is present only when a route was planned; visits and route stops are different counts.",
   {
     period: {
       type: 'string',
