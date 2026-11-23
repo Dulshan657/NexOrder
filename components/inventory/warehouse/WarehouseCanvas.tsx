@@ -107,6 +107,11 @@ export interface WarehouseCanvasProps {
   onSelectBin: (locationId: number) => void
   /** locationId → overlay fill (Phase 4). Absent → default bin fill. */
   binColors?: Map<number, string>
+  /** True when `binColors` says something about the PLACE (its code block, its
+   *  slotting block) rather than about the stock in it. A level's stripe then
+   *  takes the colour whether or not it holds anything: an empty rack mid-sweep
+   *  is exactly the one the operator needs to see (NX-0046). */
+  binColorsAreCategories?: boolean
   /** RACK location id → overlay fill for the whole rack, rolled up across its
    *  levels by the caller (which knows the active overlay). Used for the
    *  collapsed rect when it is too small to draw a per-level spine. */
@@ -154,6 +159,7 @@ export function WarehouseCanvas({
   highlightedLocationIds,
   onSelectBin,
   binColors,
+  binColorsAreCategories = false,
   rackColors,
   binBadges,
   binInfo,
@@ -551,15 +557,20 @@ export function WarehouseCanvas({
                       // BOTTOM edge upward.
                       const y = rectY + inset + innerH - (idx + 1) * stripeH
                       const roleColor = levelRoleFill(levelRoles, row.roleKey)
-                      const barColor = binColors?.get(row.locationId) ?? roleColor
+                      const overlayColor = binColors?.get(row.locationId)
+                      const barColor = overlayColor ?? roleColor
+                      // A category colour belongs to the place, so it fills the
+                      // whole stripe, stock or none; a measure keeps the bar.
+                      const placeColor = binColorsAreCategories ? overlayColor : undefined
                       const pct = row.fillPct == null ? 0 : Math.max(0, Math.min(1, row.fillPct))
                       return (
                         <g key={row.locationId}>
                           <rect
                             x={innerX} y={y} width={innerW} height={Math.max(0, stripeH - gap)}
-                            fill={roleColor} fillOpacity={0.35} rx={Math.min(1, stripeH / 4)}
+                            fill={placeColor ?? roleColor} fillOpacity={placeColor ? 0.95 : 0.35}
+                            rx={Math.min(1, stripeH / 4)}
                           />
-                          {row.fillPct != null && pct > 0 && (
+                          {!placeColor && row.fillPct != null && pct > 0 && (
                             <rect
                               x={innerX} y={y} width={innerW * pct} height={Math.max(0, stripeH - gap)}
                               fill={barColor} fillOpacity={0.95} rx={Math.min(1, stripeH / 4)}
@@ -870,7 +881,7 @@ export function WarehouseCanvas({
     // wrapping <g>, so excluding them makes a pan skip this whole subtree.
   }, [
     cell, scale, gridWidth, gridHeight, floorObjects, areaRegions, structuralRegions, placementGroups, expandedGroup,
-    selectedLocationId, highlightedLocationIds, binColors, rackColors, binBadges, binInfo,
+    selectedLocationId, highlightedLocationIds, binColors, binColorsAreCategories, rackColors, binBadges, binInfo,
     binFillPct, zoneRegions, zoneTypeByProfileId, locationsById, levelRoles, renderOverlay,
     onSelectBin, onHoverBin, guard, sharedPrefix,
   ])

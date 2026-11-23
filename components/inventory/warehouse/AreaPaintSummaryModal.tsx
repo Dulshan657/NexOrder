@@ -18,7 +18,7 @@
 // rename bins and move them between zones, signs do neither. (The component name
 // predates signs; it is the annotation-save confirm.)
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Modal } from '@/components/ui'
 import { useToastActions } from '@/hooks/useToasts'
 import { usePaintAreas, usePaintSigns } from '@/hooks/queries/useWarehouseLocations'
@@ -67,6 +67,10 @@ export function AreaPaintSummaryModal({
   const paintSignsMutation = usePaintSigns(warehouseId)
   const { addToast } = useToastActions()
   const editsSigns = signSpecs !== undefined && signBaseFingerprint !== undefined
+  /** How many signs this dialog has ALREADY written, or null if it has not yet.
+   *  A retry after the area half failed must not send them again: the first
+   *  attempt moved the sign fingerprint, so a resend can only conflict (NX-0046). */
+  const signsSavedRef = useRef<number | null>(null)
 
   /**
    * Whether `paint_areas` will actually be called — the same condition `submit`
@@ -121,13 +125,13 @@ export function AreaPaintSummaryModal({
       // to decide. If the area write then fails, the signs are already safe and
       // the retry is only the risky half. Skipping an unchanged picture also
       // keeps a pure sign edit from spending the area bucket, and vice versa.
-      let signsSaved = 0
-      if (editsSigns && signPreview && !signPreview.unchanged) {
+      if (editsSigns && signPreview && !signPreview.unchanged && signsSavedRef.current == null) {
         const signResult = await paintSignsMutation.mutateAsync({
           layoutId, baseFingerprint: signBaseFingerprint!, signs: signSpecs!,
         })
-        signsSaved = signResult.signs
+        signsSavedRef.current = signResult.signs
       }
+      const signsSaved = signsSavedRef.current ?? 0
 
       let renamed = 0
       let areasTouched = false

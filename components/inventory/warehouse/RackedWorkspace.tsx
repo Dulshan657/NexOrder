@@ -13,6 +13,7 @@
 // context — this component no longer needs one of its own.
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop } from '@/types'
 import { toProduct } from '@/lib/adapters'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
@@ -212,6 +213,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
   const codePattern = useWarehouseCodePattern(warehouseId)
   const savePattern = useSetWarehouseCodePattern(warehouseId)
   const { addToast } = useToastActions()
+  const queryClient = useQueryClient()
 
   /** The stock this site prints SLOT labels on (mig 00106). The confirm dialog
    *  judges bar width against it, so a longer pattern's physical cost is visible
@@ -274,7 +276,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
   // Every colour and label the canvas draws, derived once and memoized for
   // IDENTITY as much as for cost — they are all scene-memo dependencies.
   const {
-    binColors, rackColors, binBadges, binInfo, zoneAreas, zoneTypeByProfileId, legendExtras,
+    binColors, binColorsAreCategories, rackColors, binBadges, binInfo, zoneAreas, zoneTypeByProfileId, legendExtras,
   } = useWarehouseMapLayers({
     model,
     placements,
@@ -845,6 +847,21 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Locations or stock failed to load. Said above the map rather than in
+          place of it: a failed background refresh still has the last good
+          picture, and hiding that would be worse than the stale data (NX-0046). */}
+      {model.isError && (
+        <div role="alert" data-testid="warehouse-load-error" className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          <span>Could not load this warehouse&rsquo;s locations and stock, so the map may be empty or out of date.</span>
+          <button
+            type="button"
+            onClick={() => { void queryClient.refetchQueries({ type: 'active', predicate: (q) => q.state.status === 'error' }) }}
+            className="rounded-lg border border-rose-300 bg-white px-3 py-1 text-xs font-medium text-rose-800 hover:bg-rose-100 btn-press"
+          >
+            Try again
+          </button>
+        </div>
+      )}
       {/* The tree (not the map) is the keyboard/AT selection path — this
           announces what just got selected, from either surface. A rack level
           (mig 00072) gets a friendlier phrasing than its raw SHELF kind. */}
@@ -976,7 +993,10 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 levelHeightM={levelH}
                 selectedLocationId={selectedLocationId}
                 onSelect={selectFromMap}
-                onFallback={() => setMapView('2d')}
+                onFallback={() => {
+                  setMapView('2d')
+                  addToast('The 3D view lost the graphics card, so the map is back in 2D. Switch to 3D to try again.', 'error')
+                }}
                 floorCount={detail.layout.floorCount}
                 onFloorChange={setFloor}
                 products={catalogue}
@@ -1006,6 +1026,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           // into view behind the toolbar mid-selection.
           onSelectBin={guards.canSelectBin ? selectFromMap : NOOP}
           binColors={binColors}
+          binColorsAreCategories={binColorsAreCategories}
           rackColors={rackColors}
           binBadges={binBadges}
           binInfo={binInfo}
@@ -1360,6 +1381,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           onRouteOrderIdsChange={chooseRouteOrders}
           onProductWalk={setProductWalkStops}
           onHighlight={setProductHighlight}
+          canSimulate={canRename}
         />
       </div>
     </div>

@@ -18,7 +18,7 @@ const tree: LocationTreeNode[] = [
     location: loc(2, 'ZONE', 'Z1', 'Chiller'),
     children: [{
       location: loc(3, 'RACK', 'R7', 'Rack 7'),
-      children: [{ location: loc(4, 'SHELF', 'R7-L2', 'Chiller · Rack 7 · L2'), children: [] }],
+      children: [{ location: { ...loc(4, 'SHELF', 'R7-L2', 'Chiller · Rack 7 · L2'), levelIndex: 2 }, children: [] }],
     }],
   },
   { location: loc(5, 'ZONE', 'Z2', 'Dry'), children: [{ location: loc(6, 'BIN', 'D-1', 'Dry bay 1'), children: [] }] },
@@ -48,5 +48,23 @@ describe('WarehouseTreePanel', () => {
     rerender(<Tree selected={4} />)
     expect(screen.getByText('Rack 7')).toBeTruthy()
     expect(screen.getByText('Chiller · Rack 7 · L2')).toBeTruthy()
+  })
+
+  // NX-0046 A7: a rack level holds stock exactly as a bin does.
+  it('shows fill and product count on a rack level', () => {
+    render(
+      <WarehouseTreePanel
+        tree={tree}
+        binContents={new Map([[4, [{}, {}]]]) as never}
+        binFillPct={new Map([[4, 0.5]])}
+        selectedLocationId={4}
+        onSelect={vi.fn()}
+      />,
+    )
+    const row = screen.getByText('Chiller · Rack 7 · L2').closest('button')!
+    expect(row.textContent).toContain('50%')
+    expect(row.textContent).toContain('2 SKU')
+    // A rack is a group, not a place stock sits: no pill of its own.
+    expect(screen.getByText('Rack 7').closest('button')!.textContent).not.toContain('%')
   })
 })

@@ -133,6 +133,26 @@ describe('buildScene', () => {
     expect(scene.labels.map((l) => l.text)).toEqual(['Cold room'])
   })
 
+  // NX-0046 A8: the name used to sit at a fixed three levels, i.e. inside any
+  // rack taller than that.
+  it('floats an area name above the tallest rack', () => {
+    const tall = [1, 2, 3, 4, 5].map((i) => placement({ locationId: 40 + i, x: 4, y: 2, w: 2, h: 1, levelIndex: i }))
+    const locationsById = new Map<number, InventoryLocation>([[40, loc({ id: 40, kind: 'RACK' })]])
+    for (const i of [1, 2, 3, 4, 5]) locationsById.set(40 + i, loc({ id: 40 + i, parentId: 40, levelIndex: i }))
+    const objects = [
+      { id: 9, layoutId: 1, objectType: 'area', floor: 0, x: 3, y: 1, w: 4, h: 3, meta: { name: 'Fast movers' } },
+    ] as LayoutObject[]
+
+    const scene = buildScene(input({ placements: tall, locationsById, objects }))
+    const label = scene.labels.find((l) => l.text === 'Fast movers')!
+    expect(label.kind).toBe('area')
+    expect(label.position[1]).toBeGreaterThan(5 * LEVEL_H)
+
+    // With nothing tall on the floor it keeps a readable height, not the slab.
+    const flat = buildScene(input({ objects }))
+    expect(flat.labels[0].position[1]).toBeGreaterThan(2)
+  })
+
   it('reports scene bounds from the layout grid', () => {
     const scene = buildScene(input())
     expect(scene.bounds).toMatchObject({ width: 20 * CELL, depth: 10 * CELL })

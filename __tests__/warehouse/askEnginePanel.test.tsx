@@ -23,9 +23,10 @@ import { AskEnginePanel } from '@/components/inventory/warehouse/AskEnginePanel'
 
 afterEach(() => cleanup())
 
-function renderPanel() {
+function renderPanel(canSimulate = true) {
   return render(
     <AskEnginePanel
+      canSimulate={canSimulate}
       warehouseId={2}
       layoutId={3}
       onPutawayResult={vi.fn()}
@@ -62,5 +63,14 @@ describe('AskEnginePanel', () => {
     // The first tab is open.
     expect(screen.getByRole('tab', { name: /find a product/i }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByLabelText(/scan or type a product/i)).toBeTruthy()
+  })
+
+  // NX-0046 A4: wie-simulate is Admin/Manager only; a tab that always errors is
+  // worse than no tab.
+  it('offers no Simulate tab to someone who cannot run one', () => {
+    renderPanel(false)
+    expect(screen.getAllByRole('tab').map((t) => t.textContent?.trim())).toEqual([
+      'Find a product', 'Put away', 'Pick route',
+    ])
   })
 })
