@@ -20,7 +20,8 @@
     { "id": "A12", "check": "A Playwright spec walks the fixes against a built app on the dev database: paint a cell while zoomed in and the zoom holds; a Warehouse login sees no Simulate tab and no level-editing control; a rack level in the tree shows a fill pill.", "manual": "npx playwright test tests/e2e/warehouse-map-fixes.spec.ts against a build served on port 3004; result recorded in FINAL" },
     { "id": "A13", "check": "The five unconfirmed suspicions are each checked in a browser and recorded as reproduced-and-fixed, reproduced-and-deferred, or not reproduced.", "manual": "browser walk on the built app; outcomes listed in FINAL" },
     { "id": "A14", "check": "docs/claude/warehouse-map.md no longer says area names use drei Html; docs/claude/roadmap.md carries the deferred list from the audit.", "manual": "read the diff" },
-    { "id": "A15", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" }
+    { "id": "A15", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" },
+    { "id": "A16", "check": "A press on the map's own controls (Zoom in, Zoom out, Fit, the floor switcher) is never a paint stroke, a sweep stroke, a pan or a pinch, so those buttons work while Annotate or a code sweep is on." }
   ],
   "failFirst": [
     { "file": "__tests__/mapViewportHook.test.tsx", "test": "useMapViewport > keeps the zoom when the object list is replaced", "proves": ["A1"] },
@@ -31,7 +32,8 @@
     { "file": "__tests__/warehouseCanvasLabels.test.tsx", "test": "WarehouseCanvas — level spine > shows a code or block colour on a level with no stock", "proves": ["A6"] },
     { "file": "__tests__/warehouse/warehouseTreePanel.test.tsx", "test": "WarehouseTreePanel > shows fill and product count on a rack level", "proves": ["A7"] },
     { "file": "__tests__/warehouse3d/buildScene.test.ts", "test": "buildScene > floats an area name above the tallest rack", "proves": ["A8"] },
-    { "file": "__tests__/warehouse3d/mapViewToggle.test.tsx", "test": "useCan3d > withdraws 3D when the window stops being a wide fine-pointer screen", "proves": ["A9"] }
+    { "file": "__tests__/warehouse3d/mapViewToggle.test.tsx", "test": "useCan3d > withdraws 3D when the window stops being a wide fine-pointer screen", "proves": ["A9"] },
+    { "file": "__tests__/mapGesture.test.ts", "test": "decidePointerDown — the map's own controls > is never a stroke, a pan or a pinch", "proves": ["A16"] }
   ],
   "allow": []
 }
@@ -60,6 +62,10 @@ the manager's live map, realistic 3D, the handheld picking mini-map) builds on t
   the fallback.
 - A11: an error state in `RackedWorkspace.tsx`.
 - A12: a new `tests/e2e/warehouse-map-fixes.spec.ts`.
+- A16 (revision 1, 2026-11-24): `mapGesture.ts` `decidePointerDown` learns that a press
+  landed on a map control, and `MapStage.tsx` tells it. Found by A12's browser walk: with
+  Annotate on, the stage began a paint stroke on the Zoom and Fit buttons and took the
+  pointer capture, so their click never fired. It is on the deployed dev site too.
 - No migration, no Edge Function change, no new dependency.
 
 ## Out of scope
