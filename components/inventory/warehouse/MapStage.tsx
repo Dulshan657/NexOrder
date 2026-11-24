@@ -352,6 +352,7 @@ export function MapStage({
           tool: select?.tool ?? null,
           cell,
           cellHasUnits: cell != null && select?.hasUnitsAt(floor, cell.x, cell.y) === true,
+          onControl: (e.target as Element | null)?.closest?.('[data-map-control]') != null,
         })
 
         switch (decision.kind) {

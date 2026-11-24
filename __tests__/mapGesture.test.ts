@@ -137,3 +137,20 @@ describe('decidePointerDown — nothing armed', () => {
     expect(decidePointerDown(facts())).toEqual({ kind: 'pan' })
   })
 })
+
+// NX-0046 A16. The zoom, fit and floor buttons sit INSIDE the stage, so a press on
+// one bubbles to the stage's pointerdown. With Annotate on that began a paint
+// stroke, whose eager pointer capture re-routes the trailing click to the stage:
+// the button never fired, and a cell was painted underneath it.
+describe("decidePointerDown — the map's own controls", () => {
+  it('is never a stroke, a pan or a pinch', () => {
+    const none = { kind: 'none' }
+    expect(decidePointerDown(facts({ onControl: true, paintArmed: true }))).toEqual(none)
+    expect(decidePointerDown(brush({ onControl: true }))).toEqual(none)
+    expect(decidePointerDown(box({ onControl: true }))).toEqual(none)
+    expect(decidePointerDown(box({ onControl: true, button: 2 }))).toEqual(none)
+    expect(decidePointerDown(facts({ onControl: true, altKey: true }))).toEqual(none)
+    expect(decidePointerDown(facts({ onControl: true, pointerType: 'touch', downCount: 2 }))).toEqual(none)
+    expect(decidePointerDown(facts({ onControl: true }))).toEqual(none)
+  })
+})
