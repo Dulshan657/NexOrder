@@ -155,9 +155,9 @@ area rename and sign edit while it is up, and `canToggle3d` is true only in `vie
   `vite.config.ts`'s `vendor-react` regex is **anchored to the first `node_modules`**
   because fiber nests its own `scheduler@0.28`, which an unanchored match pulled into
   the eager chunk.
-- **drei allow-list: `CameraControls`, `Html`, `Line`.** `Text`/`Text3D` (troika),
+- **drei allow-list: `CameraControls`, `Line`.** `Text`/`Text3D` (troika),
   `Environment` presets and `useGLTF`/Draco/KTX2 fetch from CDNs or build workers the
-  CSP refuses. Area names are drei `Html` in the app's fonts.
+  CSP refuses. Area names, signs and route stop numbers are plain HTML over the canvas (`three/ScreenLabels.tsx`), moved each frame, in the app's fonts. `Html` is not on the list; `lazyGate.test.ts` pins the two that are.
 - **`@types/react` must stay absent.** `@react-three/fiber` → `its-fine` →
   `@types/react-reconciler`, whose `@types/react` peer npm auto-installs — and with
   it present `tsc` fails across the app. `package.json` `overrides` points
@@ -192,3 +192,13 @@ area rename and sign edit while it is up, and `canToggle3d` is true only in `vie
   Start pill is `anchor: 'above'` so it does not cover stop 1. Dev's demo order
   for this is `ORD-1794572122642` (ADAIRS, Main Warehouse, 6 stops incl. the cold
   room) — placed through `place-order`, so picking or cancelling it consumes it.
+
+## Map behaviour pinned by NX-0046
+
+- **The map fits on first size, a floor change, the first content to arrive, and the Fit button. Nothing else.** `useMapViewport` used to re-fit whenever the object list changed identity, and painting one area cell builds a new list, so every painted cell threw the operator back to the whole floor. Do not key a fit on `placements` or `objects` again; `__tests__/mapViewportHook.test.tsx` fails if you do.
+- **A press on the map's own controls is never the map's** (`mapGesture.ts` rule 0, `data-map-control` on `MapControls`). The zoom, fit and floor buttons sit inside the stage, so their pointerdown bubbles to it. A stroke takes the pointer capture eagerly, which re-routes the trailing click to the stage: with Annotate or a sweep on, the buttons silently did nothing and a cell was painted under them. Anything new that floats inside the stage and takes clicks needs the attribute.
+- **`binColorsAreCategories` says whether the overlay colours the PLACE or the STOCK.** Codes and Blocks describe the place, so a rack level's stripe takes the colour with nothing in it. Occupancy, Velocity and Congestion describe the stock, so they keep the fill bar. A new overlay must pick a side in `useWarehouseMapLayers.ts`.
+- **Area and sign saves are two writes, and a retry sends only the one that failed.** `AreaPaintSummaryModal` remembers that the signs landed; resending them can only conflict, because the first attempt moved the sign fingerprint.
+- **What a role cannot do, it is not shown.** `canRename` (Admin/Manager) gates the rename pencil, the live level editor, Split into levels and the Simulate tab. The Warehouse role still reads a rack's levels and selects one.
+- **The 3D find bar tracks who put the product there** (`lib/warehouse3d/findFocus.ts`). Clearing an engine highlight removes only a product the engine set.
+- **`tests/e2e/warehouse-map-fixes.spec.ts` signs in through the demo roster on the login page**, so it runs only against a demo build and needs no credential in the environment. It is read-only.

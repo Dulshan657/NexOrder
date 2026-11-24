@@ -16,7 +16,7 @@
 // stroke has only one finger to measure. MapStage calls `track` unconditionally in
 // all four pointer handlers for exactly that reason, and a source test pins it.
 
-import { useCallback, useEffect, useRef, useState, type RefObject, type PointerEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type PointerEvent, type KeyboardEvent } from 'react'
 import type { LayoutPlacement, LayoutObject } from '@/types'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import {
@@ -150,10 +150,20 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     setViewport(fitToBounds(bounds, { width: rect.width, height: rect.height }, FIT_PADDING))
   }, [placements, objects, floor])
 
-  // Fit on mount and whenever the floor (or the content backing it) changes.
+  // Fit on mount, on a floor change, and when the first content arrives — NOT
+  // whenever the content changes. `fit` is rebuilt on every new `objects` array,
+  // and painting one area cell builds one: keyed on `fit`, this threw the
+  // operator back to the whole floor on every painted cell (NX-0046). Anything
+  // else that wants the whole floor back has the Fit button.
+  const fitRef = useRef(fit)
+  fitRef.current = fit
+  const hasContent = useMemo(
+    () => contentBounds(placements, objects, floor, BASE_CELL) != null,
+    [placements, objects, floor],
+  )
   useEffect(() => {
-    fit()
-  }, [fit])
+    fitRef.current()
+  }, [floor, hasContent])
 
   // Fit once when the container first gets a real size — on first paint the
   // flex/grid layout may not have settled yet, so `fit()` above can no-op.
@@ -166,12 +176,12 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       const { width, height } = entry.contentRect
       if (width > 0 && height > 0 && !hasSizedRef.current) {
         hasSizedRef.current = true
-        fit()
+        fitRef.current()
       }
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [fit])
+  }, [])
 
   // ── Wheel = zoom (non-passive; React's onWheel can't preventDefault) ────
   useEffect(() => {

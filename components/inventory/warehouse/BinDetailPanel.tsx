@@ -42,7 +42,8 @@ interface BinDetailPanelProps {
   onSelectLevel?: (locationId: number) => void
   /** Admin/Manager — mutate-warehouse-location's role gate (mig 00094). The
    *  pencil is hidden otherwise: the function refuses anyway, and a button that
-   *  always errors is worse than no button. */
+   *  always errors is worse than no button. The same gate covers editing a
+   *  rack's levels and splitting a bin into levels (NX-0046). */
   canRename?: boolean
   /** This location sits under a hold zone (mig 00101): its stock is on hand but
    *  cannot be allocated. Derived by the caller from the zone tree. */
@@ -204,8 +205,10 @@ export function BinDetailPanel({
   // deliberately) — gating on it would take this action away from all 189 of
   // MAIN's bays. A form with no `isFloor` at all defaults to false, which is
   // the permissive answer and the right one for anything predating the column.
+  //
+  // ...and the user must be allowed to: `convert_to_levels` is Admin/Manager only.
   const canConvert =
-    location.kind === 'BIN' && !hasRackLevels && placement != null && form?.isFloor !== true
+    canRename && location.kind === 'BIN' && !hasRackLevels && placement != null && form?.isFloor !== true
   const startConvert = () =>
     setDraftLevels(
       // Seed from the form's standard layout when it has one; otherwise a
@@ -334,7 +337,10 @@ export function BinDetailPanel({
               const target = rackLevelLocations.find((loc) => loc.levelIndex === levelIndex)
               if (target) onSelectLevel?.(target.id)
             }}
-            onChange={handleLevelsChange}
+            // `set_levels` is Admin/Manager only: everyone else reads the stack
+            // and selects a level from it, and is offered nothing that changes it.
+            readOnly={!canRename}
+            onChange={canRename ? handleLevelsChange : undefined}
           />
         </div>
       )}

@@ -21,7 +21,9 @@ const ICON_BUTTON_CLASS =
 
 export function MapControls({ scale, onZoomIn, onZoomOut, onFit, floor, floorCount, onFloorChange }: MapControlsProps) {
   return (
-    <div className="absolute bottom-3 left-3 z-20 flex flex-wrap items-center gap-2">
+    // `data-map-control` is how the stage tells a press on these buttons from a
+    // press on the floor (mapGesture rule 0). Without it Annotate paints under them.
+    <div data-map-control className="absolute bottom-3 left-3 z-20 flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-lg border border-stone-200 bg-white/95 px-1.5 py-1 shadow-elevated backdrop-blur-sm">
         <button type="button" onClick={onZoomOut} aria-label="Zoom out" className={ICON_BUTTON_CLASS}>
           <Minus className="h-3.5 w-3.5" />

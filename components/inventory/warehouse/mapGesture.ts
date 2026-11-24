@@ -39,9 +39,19 @@ export interface PointerFacts {
   cell: { x: number; y: number } | null
   /** Whether `cell` holds anything a sweep can recode. False when cell is null. */
   cellHasUnits: boolean
+  /** The press landed on one of the map's own controls (zoom, fit, floor), which
+   *  sit inside the stage and so bubble their pointerdown to it. */
+  onControl?: boolean
 }
 
 export function decidePointerDown(f: PointerFacts): GestureDecision {
+  // 0. A press on the map's own controls is the button's, never the map's. Above
+  //    everything, pinch included: a stroke takes the pointer capture eagerly, which
+  //    re-routes the trailing click to the stage, so the button silently never fired
+  //    while Annotate or a sweep was on, and a cell was painted underneath it
+  //    (NX-0046).
+  if (f.onControl) return { kind: 'none' }
+
   // 1. A second finger always wins, whatever was happening. First because the second
   //    finger's own coordinates are meaningless to a brush — it lands wherever the
   //    hand happens to be, which on a dense floor is usually on a bin. A mouse is one

@@ -71,7 +71,8 @@ export function WarehouseTreePanel({
 
   const renderNode = (node: LocationTreeNode, depth: number): ReactNode => {
     const { location } = node
-    const isBin = location.kind === 'BIN'
+    // A rack level (mig 00072) holds stock exactly as a legacy bin does.
+    const isBin = location.kind === 'BIN' || (location.kind === 'SHELF' && location.levelIndex != null)
     const hasChildren = node.children.length > 0
     const isOpen = expanded.has(location.id)
     const selected = location.id === selectedLocationId

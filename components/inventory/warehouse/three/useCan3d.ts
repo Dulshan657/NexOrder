@@ -5,7 +5,7 @@
 // Warehouse role keep the 2D map, and a browser that cannot make a WebGL context
 // is never offered a view that would render blank.
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { UserRole } from '@/types'
 import { MODULE_WAREHOUSE_3D } from '@/lib/modules'
 
@@ -40,18 +40,30 @@ export function hasWebGL(): boolean {
   }
 }
 
+function matchesDesktop(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.(DESKTOP_QUERY).matches
+}
+
 export function useCan3d(role: UserRole | string | null | undefined): boolean {
+  // The offer follows the window. It used to be read once per role, so dragging
+  // the window below 1024px left the toggle, and the 3D view, in place (NX-0046).
+  const [wideFinePointer, setWideFinePointer] = useState(matchesDesktop)
+  useEffect(() => {
+    const mq = typeof window !== 'undefined' ? window.matchMedia?.(DESKTOP_QUERY) : undefined
+    if (!mq?.addEventListener) return
+    const onChange = () => setWideFinePointer(mq.matches)
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   return useMemo(
     () => {
-      const base = {
-        moduleOn: MODULE_WAREHOUSE_3D,
-        role,
-        wideFinePointer: typeof window !== 'undefined' && !!window.matchMedia?.(DESKTOP_QUERY).matches,
-      }
+      const base = { moduleOn: MODULE_WAREHOUSE_3D, role, wideFinePointer }
       // Probe WebGL last, and only for someone who would otherwise be offered 3D.
       if (!can3d({ ...base, webgl: true })) return false
       return can3d({ ...base, webgl: hasWebGL() })
     },
-    [role],
+    [role, wideFinePointer],
   )
 }

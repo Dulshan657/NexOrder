@@ -17,6 +17,7 @@ import { LabelOverlay, LabelProjector, useLabelRegistry } from './ScreenLabels'
 import type { BinContentRow } from '@/components/inventory/warehouse/useWarehouseViewerModel'
 import { buildScene, type BuildSceneInput, type Vec3 } from '@/lib/warehouse3d/buildScene'
 import { locationsHoldingProduct } from '@/lib/warehouse3d/findStock'
+import { EMPTY_FIND, nextFindProduct, operatorFind, type FindState } from '@/lib/warehouse3d/findFocus'
 import { FindStockBar } from './FindStockBar'
 import type { CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
 import { RackInstances } from './RackInstances'
@@ -53,15 +54,18 @@ const BACKGROUND = '#f5f5f4' // stone-100
 
 export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const { layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM } = props
-  const [findProductId, setFindProductId] = useState<number | null>(null)
+  // Who put the product in the find bar — the operator or the engine — so that
+  // clearing an engine highlight never takes the operator's own search with it.
+  const [find, setFind] = useState<FindState>(EMPTY_FIND)
+  const findProductId = find.productId
   /** Bumped by re-picking the current product: re-frames after an orbit. */
   const [reframe, setReframe] = useState(0)
   const onFind = (id: number | null) => {
     if (id != null && id === findProductId) setReframe((n) => n + 1)
-    else setFindProductId(id)
+    setFind(operatorFind(id))
   }
   useEffect(() => {
-    if (props.focusProductId !== undefined) setFindProductId(props.focusProductId)
+    setFind((state) => nextFindProduct(state, props.focusProductId))
   }, [props.focusProductId])
   const highlightIds = useMemo(
     () => (findProductId != null ? locationsHoldingProduct(props.binContents, findProductId) : null),

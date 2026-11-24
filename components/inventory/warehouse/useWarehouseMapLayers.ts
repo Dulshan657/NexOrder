@@ -51,6 +51,8 @@ export interface WarehouseMapLayersArgs {
 
 export interface WarehouseMapLayers {
   binColors: Map<number, string> | undefined
+  /** `binColors` describes the place (code block, slotting block), not its stock. */
+  binColorsAreCategories: boolean
   rackColors: Map<number, string> | undefined
   binBadges: Map<number, string> | undefined
   binInfo: Map<number, BinInfo>
@@ -270,5 +272,6 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
     return entries
   }, [overlay, model.locationsById, storageTypes, levelRoles, zoneAreas, zoneTypeByProfileId, objects, floor])
 
-  return { binColors, rackColors, binBadges, binInfo, zoneAreas, zoneTypeByProfileId, legendExtras }
+  const binColorsAreCategories = overlay === 'slotting_blocks' || overlay === 'unswept'
+  return { binColors, binColorsAreCategories, rackColors, binBadges, binInfo, zoneAreas, zoneTypeByProfileId, legendExtras }
 }

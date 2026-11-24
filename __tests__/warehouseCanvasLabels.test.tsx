@@ -184,6 +184,18 @@ describe('WarehouseCanvas — level spine', () => {
     const { container } = renderCanvas(3)
     expect(container.textContent).toContain('63%')
   })
+
+  // NX-0046 A6: a code block or a slotting block belongs to the PLACE, so an
+  // empty level must show it. Occupancy is about the stock, so there it must not.
+  it('shows a code or block colour on a level with no stock', () => {
+    const colours = new Map([[23, '#f59e0b']]) // L3: fill unknown, nothing in it
+    const category = renderCanvas(3, { binColors: colours, binColorsAreCategories: true })
+    expect(category.container.querySelector('[data-testid="rack-21"] rect[fill="#f59e0b"]')).toBeTruthy()
+    cleanup()
+
+    const measure = renderCanvas(3, { binColors: colours })
+    expect(measure.container.querySelector('[data-testid="rack-21"] rect[fill="#f59e0b"]')).toBeNull()
+  })
 })
 
 describe('WarehouseCanvas — areas', () => {

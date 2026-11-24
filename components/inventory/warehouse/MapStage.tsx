@@ -41,6 +41,7 @@ export interface MapStageProps {
   highlightedLocationIds?: Set<number>
   onSelectBin: (locationId: number) => void
   binColors?: Map<number, string>
+  binColorsAreCategories?: boolean
   rackColors?: Map<number, string>
   binBadges?: Map<number, string>
   binInfo?: Map<number, BinInfo>
@@ -135,6 +136,7 @@ export function MapStage({
   highlightedLocationIds,
   onSelectBin,
   binColors,
+  binColorsAreCategories,
   rackColors,
   binBadges,
   binInfo,
@@ -350,6 +352,7 @@ export function MapStage({
           tool: select?.tool ?? null,
           cell,
           cellHasUnits: cell != null && select?.hasUnitsAt(floor, cell.x, cell.y) === true,
+          onControl: (e.target as Element | null)?.closest?.('[data-map-control]') != null,
         })
 
         switch (decision.kind) {
@@ -450,6 +453,7 @@ export function MapStage({
         highlightedLocationIds={highlightedLocationIds}
         onSelectBin={guardedSelectBin}
         binColors={binColors}
+        binColorsAreCategories={binColorsAreCategories}
         rackColors={rackColors}
         binBadges={binBadges}
         binInfo={binInfo}

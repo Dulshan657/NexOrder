@@ -5,9 +5,12 @@
 // is never offered a view that would render blank.
 
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { cleanup, render, screen, fireEvent } from '@testing-library/react'
+import { act, cleanup, render, screen, fireEvent } from '@testing-library/react'
 import { UserRole } from '@/types'
-import { can3d } from '@/components/inventory/warehouse/three/useCan3d'
+
+vi.mock('@/lib/modules', async (original) => ({ ...(await original<object>()), MODULE_WAREHOUSE_3D: true }))
+
+import { can3d, useCan3d } from '@/components/inventory/warehouse/three/useCan3d'
 import { MapViewToggle } from '@/components/inventory/warehouse/three/MapViewToggle'
 
 afterEach(() => cleanup())
@@ -32,6 +35,41 @@ describe('can3d', () => {
 
   it('is false when the module is not in this build', () => {
     expect(can3d({ ...OK, moduleOn: false })).toBe(false)
+  })
+})
+
+// NX-0046 A9: the offer follows the window. It used to be decided once per role,
+// so dragging the window below 1024px left the toggle (and the 3D view) in place.
+describe('useCan3d', () => {
+  function Probe() {
+    return <output data-testid="can">{String(useCan3d(UserRole.ADMIN))}</output>
+  }
+
+  it('withdraws 3D when the window stops being a wide fine-pointer screen', () => {
+    const listeners = new Set<() => void>()
+    const mq = {
+      matches: true,
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    }
+    vi.stubGlobal('matchMedia', () => mq)
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as never)
+    try {
+      const { unmount } = render(<Probe />)
+      expect(screen.getByTestId('can').textContent).toBe('true')
+
+      act(() => { mq.matches = false; listeners.forEach((fn) => fn()) })
+      expect(screen.getByTestId('can').textContent).toBe('false')
+
+      act(() => { mq.matches = true; listeners.forEach((fn) => fn()) })
+      expect(screen.getByTestId('can').textContent).toBe('true')
+
+      unmount()
+      expect(listeners.size).toBe(0)
+    } finally {
+      getContext.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })
 

@@ -26,6 +26,10 @@ export interface AskEnginePanelProps {
   onProductWalk: (stops: PickRouteStop[] | null) => void
   /** The places holding a found product, to highlight; null clears. */
   onHighlight: (h: ProductHighlight | null) => void
+  /** Admin/Manager: `wie-simulate`'s role gate. The tab is left out otherwise.
+   *  The function refuses anyway, and a tab that always errors is worse than no
+   *  tab (NX-0046). */
+  canSimulate?: boolean
 }
 
 type TabKey = 'find' | 'putaway' | 'route' | 'simulate'
@@ -46,19 +50,21 @@ export function AskEnginePanel({
   onRouteOrderIdsChange,
   onProductWalk,
   onHighlight,
+  canSimulate = false,
 }: AskEnginePanelProps) {
   const [tab, setTab] = useState<TabKey>('find')
+  const tabs = canSimulate ? TABS : TABS.filter((t) => t.key !== 'simulate')
   const base = useId()
   const tabId = (k: TabKey) => `${base}-tab-${k}`
   const panelId = (k: TabKey) => `${base}-panel-${k}`
 
   // Arrow keys move between tabs, as a tablist should.
   const onKeyDown = (e: { key: string; preventDefault: () => void }) => {
-    const i = TABS.findIndex((t) => t.key === tab)
+    const i = tabs.findIndex((t) => t.key === tab)
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
     if (!step) return
     e.preventDefault()
-    const next = TABS[(i + step + TABS.length) % TABS.length].key
+    const next = tabs[(i + step + tabs.length) % tabs.length].key
     setTab(next)
     document.getElementById(tabId(next))?.focus()
   }
@@ -82,7 +88,7 @@ export function AskEnginePanel({
           </span>
         </div>
         <div role="tablist" aria-label="Questions" className="flex gap-1 overflow-x-auto border-b border-stone-200/80">
-          {TABS.map((t) => {
+          {tabs.map((t) => {
             const on = t.key === tab
             return (
               <button

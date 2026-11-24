@@ -209,8 +209,11 @@ export function buildScene(input: BuildSceneInput): SceneModel {
     }
   }
 
-  const { areaTiles, labels } = buildAnnotations(input, cell, levelHeightM)
   const tallest = Math.max(0, ...racks.map((k) => k.size[1]), ...objects.map((o) => o.size[1]))
+  // Area names clear the tallest thing on the floor. They used to sit at a fixed
+  // three levels, i.e. inside any rack taller than that (NX-0046). One level is
+  // the floor for an empty slab, so a name never lies on the ground.
+  const { areaTiles, labels } = buildAnnotations(input, cell, Math.max(tallest, levelHeightM))
 
   return {
     levels,
@@ -231,7 +234,7 @@ export function buildScene(input: BuildSceneInput): SceneModel {
 /** Area washes and floating names. Regions come from the same flood fill the 2D
  *  canvases use (`objectRegions`), so an area's name is drawn once per region,
  *  and a sign's text once per sign, exactly as on the 2D map. */
-function buildAnnotations(input: BuildSceneInput, cell: number, levelHeightM: number) {
+function buildAnnotations(input: BuildSceneInput, cell: number, clearHeightM: number) {
   const areaTiles: AreaTile[] = []
   const labels: SceneLabel[] = []
   for (const region of objectRegions(input.objects as LayoutObject[], input.floor)) {
@@ -256,7 +259,7 @@ function buildAnnotations(input: BuildSceneInput, cell: number, levelHeightM: nu
       kind: region.objectType === 'area' ? 'area' : 'sign',
       text: name,
       // Areas float above the racking they name; signs sit at head height.
-      position: [x, region.objectType === 'area' ? r(levelHeightM * 3 + LABEL_LIFT_M) : 2.2, z],
+      position: [x, region.objectType === 'area' ? r(clearHeightM + LABEL_LIFT_M) : 2.2, z],
     })
   }
   return { areaTiles, labels }
