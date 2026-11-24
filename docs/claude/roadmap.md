@@ -42,6 +42,21 @@ Ordered by impact; one-line scope each so future agents don't drift.
 11. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.
 12. **PWA** — no manifest/service worker. Low priority for B2B (reps online); install-to-home-screen would help field reps.
 
+## Warehouse map: what the 2026-11-23 audit left open
+
+NX-0046 fixed the correctness faults. These were found by the same audit and deliberately not done. The plan that follows NX-0046 is, in order: one search box for product / bin / batch / pallet in 2D and 3D; the manager's live map (per-pallet contents, open tasks and movement history on a bin; a Work overlay of live putaway, replenishment, pick and off-home tasks; a capacity table per zone and rack); 3D racks and pallets that look real, derived with no new data entry; a picking mini-map on the RS35.
+
+- **Speed, unmeasured.** Any stock change in any warehouse rebuilds `locationsById` and with it the whole scene. Painting and pinch-zoom rebuild the scene per cell and per frame (`scale` is a scene-memo dependency). Zone washes draw one rectangle per cell. `selectFromMap` in `RackedWorkspace.tsx` gets a new identity every render. The scene memo in `WarehouseCanvas.tsx` omits `onRenameArea`, `onEditSign` and `signRegions`. Measure on a large site before fixing any of it.
+- **A grid 200 cells wide cannot be zoomed out far enough to see whole** (`MIN_SCALE` 0.4 x `BASE_CELL` 26).
+- **Keyboard and screen readers.** Bins are not focusable in 2D or 3D. Overlay and floor buttons have no `aria-pressed`, tree rows no `aria-expanded`. 3D labels are hidden from screen readers and its help text is mouse-only. No Ctrl+Z while painting areas.
+- **Files over the 800-line limit:** `mutate-warehouse-location/index.ts` (1988), `mutate-layout/index.ts` (1535), `RackedWorkspace.tsx` (1367+), `useLayoutEditorState.ts` (1189), `LayoutDesignerView.tsx` (1004), `WarehouseCanvas.tsx` (1000+), `_shared/wie/codePattern.ts` (898).
+- **3D Aisle preset ignores what is around it.** With nothing selected it stands at the scene centre, which on the demo site is inside the bulk pallet grid with a post in the middle of the view. Seen in a browser 2026-11-24. Belongs with the rack-facing work in the realistic-3D piece.
+- **3D, not checked:** whether a click passes through a wall to the rack behind it; shadows on a site much larger than the demo (they are fine there); performance at 1000 to 2000 locations; props are untyped across the lazy boundary.
+- **Designer, not checked:** whether a no-op annotation save clears the hydration guard so a later refetch overwrites unsaved edits (`LayoutDesignerView.tsx` around the annotation save).
+- **Not a fault after all:** "narrow areas cannot be renamed". `regionLabelBudget` gives every area at least six cells of label width. And the hand-built grid geometry in `three/SceneObjects.tsx` cannot leak in practice: it is rebuilt only when the grid size changes, and `WarehousePage` remounts the workspace per layout.
+- **Other gaps:** a layout or location change made by another user is not pushed to the map (only `inventory_balances` is subscribed); the live map imports from the designer module (`WarehouseCanvas.tsx` imports `LayoutCanvas`); there is no deep link to a bin, floor or overlay; the "no three.js in a tenant build" check is manual.
+- **Dev serves an unmerged build.** On 2026-11-24 `nexorder.vercel.app/version.json` was `79edf70`, the NX-0041 dev-merge, not `main`. Check before any `deploy:dev`.
+
 ## Recently shipped
 
 git history is the changelog. Only the items below carry something the sections above don't.
