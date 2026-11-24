@@ -23,7 +23,7 @@ async function signInOnMap(page: Page, role: DemoRole): Promise<void> {
   await chip.waitFor({ state: 'visible', timeout: 30_000 })
   await chip.click()
   await page.getByRole('button', { name: /^Sign in$/ }).click()
-  await stageOf(page).waitFor({ state: 'visible', timeout: 40_000 })
+  await stageOf(page).waitFor({ state: 'visible', timeout: 25_000 })
   await page.waitForTimeout(2_000) // let the first fit settle
 }
 
@@ -74,7 +74,7 @@ test.describe('warehouse map fixes (NX-0046)', () => {
     // One painted cell: another new object list.
     await page.getByLabel('Area name').fill('E2E zoom check')
     const floor = await openFloor(page)
-    test.skip(!floor, 'no open floor visible at this zoom')
+    expect(floor, 'the demo floor must have open floor visible at this zoom').not.toBeNull()
     await page.mouse.move(floor!.x, floor!.y)
     await page.mouse.down()
     await page.mouse.move(floor!.x + 3, floor!.y + 3, { steps: 3 })
@@ -110,7 +110,7 @@ test.describe('warehouse map fixes (NX-0046)', () => {
       await cells.nth(i).click({ timeout: 2_000 }).catch(() => {}) // clipped cells are unclickable
       await page.waitForTimeout(150)
     }
-    test.skip((await level.count()) === 0, 'this site has no levelled rack on the visible map')
+    expect(await level.count(), 'the demo site must have a levelled rack on the visible map').toBeGreaterThan(0)
     const levelCode = ((await level.getAttribute('data-testid')) ?? '').replace(/^level-/, '')
     await level.click()
 
@@ -141,8 +141,9 @@ test.describe('warehouse map fixes (NX-0046)', () => {
 })
 
 // A10. Its own describe because it needs WebGL and the `warehouse_3d` module,
-// which is on the demo build only; without either the toggle is never offered
-// and there is nothing to walk.
+// which is on the demo build only. Without either the toggle is never offered and
+// these FAIL rather than skip: a skipped walk reads as a pass, and this spec only
+// ever runs against the demo.
 test.describe('warehouse 3D view falls back out loud (NX-0046)', () => {
   const toggle3d = (page: Page) => page.getByRole('button', { name: '3D', exact: true })
   // R3F puts the label on the element it is given, which may be the canvas or its
@@ -151,7 +152,7 @@ test.describe('warehouse 3D view falls back out loud (NX-0046)', () => {
 
   test('a lost graphics context returns to 2D and says so', async ({ page }) => {
     await signInOnMap(page, 'Admin')
-    test.skip((await toggle3d(page).count()) === 0, '3D is not offered in this browser or build')
+    await expect(toggle3d(page), '3D must be offered: demo build, desktop viewport, WebGL').toBeVisible()
     await toggle3d(page).click()
     await canvas3d(page).waitFor({ state: 'visible', timeout: 30_000 })
     await page.waitForTimeout(1_000)
@@ -171,7 +172,7 @@ test.describe('warehouse 3D view falls back out loud (NX-0046)', () => {
 
   test('3D is withdrawn when the window is no longer a desktop one', async ({ page }) => {
     await signInOnMap(page, 'Admin')
-    test.skip((await toggle3d(page).count()) === 0, '3D is not offered in this browser or build')
+    await expect(toggle3d(page), '3D must be offered: demo build, desktop viewport, WebGL').toBeVisible()
     await toggle3d(page).click()
     await canvas3d(page).waitFor({ state: 'visible', timeout: 30_000 })
 
