@@ -77,3 +77,31 @@ the manager's live map, realistic 3D, the handheld picking mini-map) builds on t
   area at least six cells of label width, so the name and its rename target are always drawn.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `useMapViewport > keeps the zoom when the object list is replaced` fails on base (0.4566 vs 0.5479), passes on tip. Browser: `the zoom holds when Annotate is entered and when a cell is painted` passes on build 0faa259 and fails on the deployed dev build 79edf70 (2.486 expected, 1.726 received) | |
+| A2 | claimed | `AreaPaintSummaryModal > a retry after the area save failed does not send the signs again` fails on base (signs sent 2 times), passes on tip | Not walked in a browser: it needs a real save to fail half way |
+| A3 | claimed | `nextFindProduct > clearing an engine highlight leaves the operator's own search` passes on tip | Proven by absence only: `lib/warehouse3d/findFocus.ts` is new. Not walked in a browser |
+| A4 | claimed | `AskEnginePanel > offers no Simulate tab to someone who cannot run one` fails on base, passes on tip. Browser: `the Warehouse role is offered nothing the server refuses` passes on 0faa259, fails on 79edf70 | |
+| A5 | claimed | `BinDetailPanel > shows the Warehouse role a rack's levels with nothing to change` fails on base (8 editable controls), passes on tip. Same browser test as A4 | |
+| A6 | claimed | `WarehouseCanvas — level spine > shows a code or block colour on a level with no stock` fails on base, passes on tip | Not looked at in a browser with the Codes overlay on |
+| A7 | claimed | `WarehouseTreePanel > shows fill and product count on a rack level` fails on base, passes on tip. Same browser test as A4 asserts the pill on a real level | |
+| A8 | claimed | `buildScene > floats an area name above the tallest rack` fails on base (6.5 vs 10), passes on tip. Screenshot of the demo site in 3D shows the names above the five-level racks | |
+| A9 | claimed | `useCan3d > withdraws 3D when the window stops being a wide fine-pointer screen` fails on base, passes on tip | |
+| A10 | claimed | Playwright on build 0faa259: `a lost graphics context returns to 2D and says so` and `3D is withdrawn when the window is no longer a desktop one` both pass | Headless Chromium with software WebGL, not a real GPU reset |
+| A11 | claimed | Playwright on build 0faa259: `a failed stock load is said above the map, with a retry` passes; fails on 79edf70 (no message) | The banner is shown ABOVE the map, not in place of it, so a failed background refresh keeps the last good picture |
+| A12 | claimed | `E2E_BASE_URL=http://localhost:3004 npx playwright test tests/e2e/warehouse-map-fixes.spec.ts --project=chromium --workers=1`: 5 passed on build 0faa259 (`vite build --mode dev`, `vite preview` on 3004, dev database). The three 2D tests fail against 79edf70. `tests/e2e/recode-gestures.spec.ts`: 6 passed on the same build | |
+| A13 | not-claimed | | Three of five checked. Aisle camera preset: reproduced (stands inside the bulk pallet grid with nothing selected), deferred to the realistic-3D piece. Clipped shadows: not reproduced on the demo site. Grid geometry leak: not reachable, by reading (the workspace remounts per layout). Clicks passing through walls and the designer wiping unsaved edits: not checked. All five are in `docs/claude/roadmap.md` |
+| A14 | claimed | commit 0faa259 | |
+| A15 | not-claimed | | Not merged and not deployed. Dev is serving 79edf70, the unmerged NX-0041 dev-merge, so a `deploy:dev` from this branch would replace it; that is the owner's call |
+| A16 | claimed | `decidePointerDown — the map's own controls > is never a stroke, a pan or a pinch` fails on base, passes on tip. Browser: the Fit assertion at the end of the zoom test failed before the fix (scale stayed 2.486) and passes after; the same dead buttons were measured on 79edf70 | Added by revision 1 after the browser walk found it |
+
+### Not claimed
+
+- Nothing was tried on a real RS35 or any touch device. The map-control rule changes what a finger on the zoom buttons does, and that was only exercised with a mouse.
+- The full unit suite had 11 failures in one run (HoReCa form, Import PO, Receive Stock, QR approval), all timeouts at 5 to 7 seconds on a loaded machine. Those six files pass when run alone (77 tests). None touches the map.
+- The Codes and Blocks overlay fix (A6), the save retry (A2) and the 3D find bar (A3) were proven by unit tests only.
+- The tenant build was not rebuilt and checked for three.js. This change does not touch the lazy gate.
+- `npm ci` was run in this checkout because `three` was missing from `node_modules`; `package-lock.json` is unchanged.
+- The browser spec signs in through the demo roster on the login page, so it cannot run in CI as it stands and proves nothing about a tenant build.
