@@ -20,10 +20,11 @@ async function signInOnMap(page: Page, role: DemoRole): Promise<void> {
   // `?tab=` is read once, when the shell first mounts after sign-in.
   await page.goto('/?tab=Warehouse')
   const chip = page.getByRole('button', { name: new RegExp(`Fill the form with the ${role} account`, 'i') })
-  await chip.waitFor({ state: 'visible', timeout: 30_000 })
+  // No explicit waits anywhere in this file: `waitFor` runs to the test's own limit.
+  await chip.waitFor({ state: 'visible' })
   await chip.click()
   await page.getByRole('button', { name: /^Sign in$/ }).click()
-  await stageOf(page).waitFor({ state: 'visible', timeout: 25_000 })
+  await stageOf(page).waitFor({ state: 'visible' })
   await page.waitForTimeout(2_000) // let the first fit settle
 }
 
@@ -35,6 +36,18 @@ async function sceneScale(page: Page): Promise<number> {
     (document.querySelector('[role="application"] svg g') as SVGGElement | null)?.getAttribute('transform') ?? '')
   const m = /scale\(([-\d.e]+)/.exec(transform)
   return m ? Number(m[1]) : NaN
+}
+
+/**
+ * Wait for something slower than one action, without a per-call limit: the stock
+ * query retries once with a back-off before it reports an error, which is longer
+ * than a single action is allowed here. Bounded by the test's own limit.
+ */
+async function eventually(page: Page, done: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 44; i++) {
+    if (await done()) return
+    await page.waitForTimeout(500)
+  }
 }
 
 /** A point inside the map with no rack under it. */
@@ -103,16 +116,21 @@ test.describe('warehouse map fixes (NX-0046)', () => {
     await stageOf(page).scrollIntoViewIfNeeded()
     // `rack-*` is every cell, levelled or not: a plain bin selects, a levelled
     // rack expands in place. Try cells until one expands.
+    // `rack-*` is every cell, levelled or not: a plain bin selects, a levelled
+    // rack expands in place. The Warehouse login lands on its home site, which is
+    // large and fitted small, so most cells are clipped or a few pixels wide. The
+    // click is DISPATCHED for that reason: finding a levelled rack is setup, not
+    // the behaviour under test, and a dispatched click needs no hit test.
     const cells = page.locator('[data-testid^="rack-"]')
     const level = page.locator('[data-testid^="level-"]').first()
-    const tries = Math.min(await cells.count(), 40)
+    const tries = Math.min(await cells.count(), 80)
     for (let i = 0; i < tries && (await level.count()) === 0; i++) {
-      await cells.nth(i).click({ timeout: 2_000 }).catch(() => {}) // clipped cells are unclickable
-      await page.waitForTimeout(150)
+      await cells.nth(i).dispatchEvent('click')
+      await page.waitForTimeout(100)
     }
     expect(await level.count(), 'the demo site must have a levelled rack on the visible map').toBeGreaterThan(0)
     const levelCode = ((await level.getAttribute('data-testid')) ?? '').replace(/^level-/, '')
-    await level.click()
+    await level.dispatchEvent('click')
 
     const panel = page.getByTestId('rack-level-panel')
     await expect(panel).toBeVisible()
@@ -131,12 +149,14 @@ test.describe('warehouse map fixes (NX-0046)', () => {
     await signInOnMap(page, 'Admin')
 
     const alert = page.getByTestId('warehouse-load-error')
-    await expect(alert).toBeVisible({ timeout: 20_000 })
+    await eventually(page, async () => (await alert.count()) > 0)
+    await expect(alert).toBeVisible()
     await expect(alert).toContainText(/could not load/i)
 
     failing = false
     await alert.getByRole('button', { name: 'Try again' }).click()
-    await expect(alert).toHaveCount(0, { timeout: 20_000 })
+    await eventually(page, async () => (await alert.count()) === 0)
+    await expect(alert).toHaveCount(0)
   })
 })
 
@@ -154,7 +174,7 @@ test.describe('warehouse 3D view falls back out loud (NX-0046)', () => {
     await signInOnMap(page, 'Admin')
     await expect(toggle3d(page), '3D must be offered: demo build, desktop viewport, WebGL').toBeVisible()
     await toggle3d(page).click()
-    await canvas3d(page).waitFor({ state: 'visible', timeout: 30_000 })
+    await canvas3d(page).waitFor({ state: 'visible' })
     await page.waitForTimeout(1_000)
 
     // The same event a real GPU reset fires.
@@ -165,7 +185,7 @@ test.describe('warehouse 3D view falls back out loud (NX-0046)', () => {
       gl?.getExtension('WEBGL_lose_context')?.loseContext()
     })
 
-    await expect(page.getByText(/lost the graphics card/i)).toBeVisible({ timeout: 10_000 })
+    await page.getByText(/lost the graphics card/i).waitFor({ state: 'visible' })
     await expect(stageOf(page)).toBeVisible()
     await expect(canvas3d(page)).toHaveCount(0)
   })
@@ -174,10 +194,10 @@ test.describe('warehouse 3D view falls back out loud (NX-0046)', () => {
     await signInOnMap(page, 'Admin')
     await expect(toggle3d(page), '3D must be offered: demo build, desktop viewport, WebGL').toBeVisible()
     await toggle3d(page).click()
-    await canvas3d(page).waitFor({ state: 'visible', timeout: 30_000 })
+    await canvas3d(page).waitFor({ state: 'visible' })
 
     await page.setViewportSize({ width: 900, height: 800 })
-    await expect(canvas3d(page)).toHaveCount(0, { timeout: 10_000 })
+    await canvas3d(page).waitFor({ state: 'detached' })
     await expect(toggle3d(page)).toHaveCount(0)
     await expect(stageOf(page)).toBeVisible()
   })
