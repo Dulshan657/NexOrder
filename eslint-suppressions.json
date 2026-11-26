@@ -283,11 +283,6 @@
       "count": 3
     }
   },
-  "components/admin/newOrder/OrderLinesGrid.tsx": {
-    "jsx-a11y/control-has-associated-label": {
-      "count": 2
-    }
-  },
   "components/admin/rules/CompatibilityMatrixView.tsx": {
     "jsx-a11y/control-has-associated-label": {
       "count": 1

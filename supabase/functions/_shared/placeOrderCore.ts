@@ -93,6 +93,12 @@ export interface PlaceOrderCoreInput {
   deliveryTimeSlot?: 'AM' | 'PM' | null
   /** The captured signature / verification payload, stored as-is on the order. */
   verification?: Record<string, unknown> | null
+  /**
+   * An `order_drafts` row this order was keyed from (New Order). Deleted once
+   * the order is real — after the reservation succeeds — and never on a dry
+   * run or a failure, so a refused order leaves the operator's work in place.
+   */
+  draftId?: string | null
 }
 
 export interface PlaceOrderCoreOptions {
@@ -580,6 +586,13 @@ export async function placeOrderCore(
   if (invoiceError) {
     // Order is already placed; surface invoice failure but don't roll back
     console.warn('Invoice creation failed, order placed without invoice:', invoiceError.message)
+  }
+
+  if (input.draftId) {
+    // The order stands whether or not this succeeds; a draft left behind is
+    // an annoyance on the Drafts list, not a reason to fail a placed order.
+    const { error: draftError } = await service.from('order_drafts').delete().eq('id', input.draftId)
+    if (draftError) console.warn('Order placed but its draft was not deleted:', draftError.message)
   }
 
   dispatchConfirmationEmail(orderId)

@@ -52,6 +52,8 @@ export const FUNCTION_MODULES = {
   'cancel-order': 'sales_orders',
   // QuickBooks invoices become orders here, as they do through place-order.
   'import-qb-invoices': 'sales_orders',
+  // New Order drafts (NX-0048): saved while an order is keyed, spent by place-order.
+  'mutate-order-draft': 'sales_orders',
 
   // ── shop ──────────────────────────────────────────────────────────────────
   // Self-service ordering: the catalogue browse, the cart, the pantry, and the
