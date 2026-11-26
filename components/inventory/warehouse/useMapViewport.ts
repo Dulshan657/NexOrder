@@ -15,26 +15,70 @@
 // paint or brush stroke owns — because otherwise a pinch starting under a live
 // stroke has only one finger to measure. MapStage calls `track` unconditionally in
 // all four pointer handlers for exactly that reason, and a source test pins it.
+//
+// ── Motion (NX-0047) ────────────────────────────────────────────────────────
+// The map MOVES rather than jumps: the zoom buttons, + - 0, Fit and a floor change
+// ease to their target over ZOOM_ANIM_MS; a fast pan glides to a stop when
+// released. Under prefers-reduced-motion — and wherever that cannot be asked, as
+// in jsdom — every one of those jumps instead. Any new press, wheel or pinch
+// cancels a move in flight, so the map never fights the operator's hand.
+//
+// `settledScale` is the scale the SCENE is drawn at. The live scale goes on the
+// <g transform> every frame; the settled one changes only once a zoom stops (an
+// animation's last frame, a pinch's end, ~SETTLE_MS after the last wheel tick), so
+// a zoom re-renders the ~945-level scene once instead of on every frame.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type PointerEvent, type KeyboardEvent } from 'react'
 import type { LayoutPlacement, LayoutObject } from '@/types'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import {
+  type ScaleLimits,
   type Viewport,
+  DEFAULT_SCALE_LIMITS,
   applyPinch,
   contentBounds,
   fitToBounds,
+  interpolateViewport,
   panBy,
+  scaleLimitsForFit,
   zoomByFactor,
 } from './mapViewport'
 
 /** Affordances only — never a capability gate. See the header. */
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 const DRAG_THRESHOLD_PX = 4
 const PAN_STEP_PX = 48
-const WHEEL_ZOOM_FACTOR = 1.1
 const BUTTON_ZOOM_FACTOR = 1.2
 const FIT_PADDING = 32
+
+/** Wheel zoom is continuous: the factor is exp(-pixels × this). A mouse notch
+ *  (~100 px) is ×1.16; a trackpad's few pixels a matching nudge. */
+const WHEEL_ZOOM_PER_PX = 0.0015
+/** One event never zooms more than this, however large its delta. */
+const WHEEL_MAX_STEP = 2
+/** deltaMode 1 (lines) and 2 (pages) in pixels, so every wheel speaks one unit. */
+const WHEEL_LINE_PX = 16
+const WHEEL_PAGE_PX = 800
+
+const ZOOM_ANIM_MS = 220
+/** How long after the last wheel tick the zoom is treated as finished. */
+const SETTLE_MS = 120
+
+/** Release velocity is measured over this much of the drag's tail. */
+const VELOCITY_WINDOW_MS = 80
+/** Slower than this at release (px/ms) and the map simply stops. */
+const MIN_GLIDE_SPEED = 0.25
+/** Friction: velocity decays by e every this many ms. */
+const GLIDE_TAU_MS = 325
+/** The glide ends once it is this slow (px/ms). */
+const GLIDE_STOP_SPEED = 0.02
+
+interface MotionSample {
+  t: number
+  x: number
+  y: number
+}
 
 interface PanState {
   pointerId: number
@@ -45,6 +89,11 @@ interface PanState {
   /** Whether setPointerCapture was actually taken for this pointer session —
    *  only true once the drag threshold is crossed (see onPointerMove). */
   captured: boolean
+  /** The drag's recent positions, for the release velocity. */
+  samples: MotionSample[]
+  /** The survivor of a pinch: it pans, but never glides (a finger that has just
+   *  been pinching has no honest throw velocity). */
+  fromPinch: boolean
 }
 
 interface PinchState {
@@ -64,6 +113,15 @@ interface TrackedPointer {
   type: string
 }
 
+/** A move in flight: an eased tween or a momentum glide. */
+interface Motion {
+  frame: number
+  /** A tween's destination, so a second button press chains from it. */
+  target: Viewport | null
+  /** Whether the tween is a zoom about a fixed point. */
+  anchored: boolean
+}
+
 export interface UseMapViewportArgs {
   placements: LayoutPlacement[]
   objects: LayoutObject[]
@@ -80,6 +138,10 @@ export interface MapViewportHandlers {
 
 export interface UseMapViewportResult {
   viewport: Viewport
+  /** The scale the scene is drawn at — see the header. */
+  settledScale: number
+  /** True while an animation or a glide is moving the map. */
+  inMotion: boolean
   containerRef: RefObject<HTMLDivElement | null>
   handlers: MapViewportHandlers
   fit: () => void
@@ -110,9 +172,43 @@ function matchesCoarsePointer(): boolean {
   return window.matchMedia(COARSE_POINTER_QUERY).matches
 }
 
+/** Whether to animate at all. Asked at the moment of moving, so a preference
+ *  changed mid-session is honoured. Where it cannot be asked, do not animate. */
+function motionAllowed(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  if (typeof window.requestAnimationFrame !== 'function') return false
+  return !window.matchMedia(REDUCED_MOTION_QUERY).matches
+}
+
+/** A wheel event's vertical travel in pixels, whatever unit it was reported in. */
+function wheelPixels(e: WheelEvent): number {
+  if (e.deltaMode === 1) return e.deltaY * WHEEL_LINE_PX
+  if (e.deltaMode === 2) return e.deltaY * WHEEL_PAGE_PX
+  return e.deltaY
+}
+
+/** Zoom factor for one wheel event: continuous in its distance, capped per event. */
+export function wheelZoomFactor(pixels: number): number {
+  if (!Number.isFinite(pixels)) return 1
+  const factor = Math.exp(-pixels * WHEEL_ZOOM_PER_PX)
+  return Math.min(WHEEL_MAX_STEP, Math.max(1 / WHEEL_MAX_STEP, factor))
+}
+
+/** Release velocity (px/ms) from the drag's tail; zero if the hand had stopped. */
+function releaseVelocity(samples: MotionSample[], now: number): { x: number; y: number } {
+  const last = samples[samples.length - 1]
+  if (!last || now - last.t > VELOCITY_WINDOW_MS) return { x: 0, y: 0 }
+  const first = samples.find((s) => last.t - s.t <= VELOCITY_WINDOW_MS) ?? last
+  const dt = last.t - first.t
+  if (dt <= 0) return { x: 0, y: 0 }
+  return { x: (last.x - first.x) / dt, y: (last.y - first.y) / dt }
+}
+
 export function useMapViewport({ placements, objects, floor }: UseMapViewportArgs): UseMapViewportResult {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState<Viewport>({ scale: 1, tx: 0, ty: 0 })
+  const [settledScale, setSettledScale] = useState(1)
+  const [inMotion, setInMotion] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
   const [coarsePointer, setCoarsePointer] = useState<boolean>(matchesCoarsePointer)
 
@@ -121,6 +217,10 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
   const hasSizedRef = useRef(false)
   const pointersRef = useRef(new Map<number, TrackedPointer>())
   const pinchRef = useRef<PinchState | null>(null)
+  const motionRef = useRef<Motion | null>(null)
+  const limitsRef = useRef<ScaleLimits>(DEFAULT_SCALE_LIMITS)
+  const lastWheelRef = useRef(-Infinity)
+  const lastFitFloorRef = useRef<number | null>(null)
   /** The latest viewport, for handlers that must read rather than update it. One
    *  frame of staleness cannot matter: a pinch begins on a pointer event. */
   const viewportRef = useRef(viewport)
@@ -136,33 +236,141 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  // ── Fit-to-content ───────────────────────────────────────────────────────
-  const fit = useCallback(() => {
-    const el = containerRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    if (!(rect.width > 0) || !(rect.height > 0)) return
-    const bounds = contentBounds(placements, objects, floor, BASE_CELL)
-    if (!bounds) {
-      setViewport({ scale: 1, tx: 0, ty: 0 })
+  // ── Motion ────────────────────────────────────────────────────────────────
+  const stopMotion = useCallback(() => {
+    const m = motionRef.current
+    if (!m) return
+    window.cancelAnimationFrame(m.frame)
+    motionRef.current = null
+    setInMotion(false)
+  }, [])
+
+  useEffect(() => () => {
+    const m = motionRef.current
+    if (m && typeof window !== 'undefined') window.cancelAnimationFrame(m.frame)
+  }, [])
+
+  /** Ease to `target`; jump where motion is unwelcome. `anchor` makes it a zoom
+   *  about that point (see interpolateViewport). */
+  const animateTo = useCallback((target: Viewport, anchor?: { x: number; y: number }) => {
+    const running = motionRef.current
+    stopMotion()
+    if (!motionAllowed()) {
+      setViewport(target)
       return
     }
-    setViewport(fitToBounds(bounds, { width: rect.width, height: rect.height }, FIT_PADDING))
+    const from = viewportRef.current
+    // Chaining off an unanchored move (a Fit still in flight) cannot keep a fixed
+    // point that the move it interrupts never had.
+    const anchorFor = running && !running.anchored ? undefined : anchor
+    const start = performance.now()
+    const motion: Motion = { frame: 0, target, anchored: anchorFor != null }
+    const step = (now: number) => {
+      if (motionRef.current !== motion) return
+      const t = (now - start) / ZOOM_ANIM_MS
+      if (t >= 1) {
+        motionRef.current = null
+        setInMotion(false)
+        setViewport(target)
+        return
+      }
+      setViewport(interpolateViewport(from, target, t, anchorFor))
+      motion.frame = window.requestAnimationFrame(step)
+    }
+    motionRef.current = motion
+    setInMotion(true)
+    motion.frame = window.requestAnimationFrame(step)
+  }, [stopMotion])
+
+  /** Let a released pan coast to a stop under friction. */
+  const glide = useCallback((velocity: { x: number; y: number }) => {
+    stopMotion()
+    if (!motionAllowed()) return
+    if (Math.hypot(velocity.x, velocity.y) < MIN_GLIDE_SPEED) return
+    let v = velocity
+    let prev = performance.now()
+    const motion: Motion = { frame: 0, target: null, anchored: false }
+    const step = (now: number) => {
+      if (motionRef.current !== motion) return
+      const dt = Math.max(0, now - prev)
+      prev = now
+      const decay = Math.exp(-dt / GLIDE_TAU_MS)
+      v = { x: v.x * decay, y: v.y * decay }
+      if (Math.hypot(v.x, v.y) < GLIDE_STOP_SPEED) {
+        motionRef.current = null
+        setInMotion(false)
+        return
+      }
+      setViewport((vp) => panBy(vp, v.x * dt, v.y * dt))
+      motion.frame = window.requestAnimationFrame(step)
+    }
+    motionRef.current = motion
+    setInMotion(true)
+    motion.frame = window.requestAnimationFrame(step)
+  }, [stopMotion])
+
+  // ── Settled scale ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const zooming = motionRef.current?.target != null
+      || pinchRef.current != null
+      || performance.now() - lastWheelRef.current < SETTLE_MS
+    if (!zooming) {
+      setSettledScale(viewport.scale)
+      return
+    }
+    const timer = setTimeout(() => setSettledScale(viewportRef.current.scale), SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [viewport.scale])
+
+  // ── Fit-to-content ───────────────────────────────────────────────────────
+  /** The fitted view for this floor, or null when there is nothing to measure.
+   *  Also widens the zoom range so a floor that only fits below the default
+   *  minimum can still be zoomed out past its fit (NX-0047 A6). */
+  const fitTarget = useCallback((): Viewport | null => {
+    const el = containerRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    if (!(rect.width > 0) || !(rect.height > 0)) return null
+    const bounds = contentBounds(placements, objects, floor, BASE_CELL)
+    if (!bounds) {
+      limitsRef.current = DEFAULT_SCALE_LIMITS
+      return { scale: 1, tx: 0, ty: 0 }
+    }
+    const target = fitToBounds(bounds, { width: rect.width, height: rect.height }, FIT_PADDING)
+    limitsRef.current = scaleLimitsForFit(target.scale)
+    return target
   }, [placements, objects, floor])
+
+  const fitWith = useCallback((animate: boolean) => {
+    const target = fitTarget()
+    if (!target) return
+    lastFitFloorRef.current = floor
+    if (animate) {
+      animateTo(target)
+    } else {
+      stopMotion()
+      setViewport(target)
+    }
+  }, [fitTarget, floor, animateTo, stopMotion])
+
+  const fit = useCallback(() => fitWith(true), [fitWith])
 
   // Fit on mount, on a floor change, and when the first content arrives — NOT
   // whenever the content changes. `fit` is rebuilt on every new `objects` array,
   // and painting one area cell builds one: keyed on `fit`, this threw the
   // operator back to the whole floor on every painted cell (NX-0046). Anything
   // else that wants the whole floor back has the Fit button.
-  const fitRef = useRef(fit)
-  fitRef.current = fit
+  // A floor CHANGE animates; the first fit of all jumps, since there is nothing
+  // on screen yet to move from.
+  const fitRef = useRef(fitWith)
+  fitRef.current = fitWith
   const hasContent = useMemo(
     () => contentBounds(placements, objects, floor, BASE_CELL) != null,
     [placements, objects, floor],
   )
   useEffect(() => {
-    fitRef.current()
+    const previous = lastFitFloorRef.current
+    fitRef.current(previous != null && previous !== floor)
   }, [floor, hasContent])
 
   // Fit once when the container first gets a real size — on first paint the
@@ -176,7 +384,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       const { width, height } = entry.contentRect
       if (width > 0 && height > 0 && !hasSizedRef.current) {
         hasSizedRef.current = true
-        fitRef.current()
+        fitRef.current(false)
       }
     })
     ro.observe(el)
@@ -194,15 +402,17 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       // intercept, so this doubles as the pinch gesture.
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
+      stopMotion()
+      lastWheelRef.current = performance.now()
       const rect = el.getBoundingClientRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
-      const factor = e.deltaY < 0 ? WHEEL_ZOOM_FACTOR : 1 / WHEEL_ZOOM_FACTOR
-      setViewport((vp) => zoomByFactor(vp, factor, cx, cy))
+      const factor = wheelZoomFactor(wheelPixels(e))
+      setViewport((vp) => zoomByFactor(vp, factor, cx, cy, limitsRef.current))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [stopMotion])
 
   // ── Drag to pan (Pointer Events) ─────────────────────────────────────────
   // Capture is taken lazily (see onPointerMove) rather than here: capturing on
@@ -228,6 +438,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     if (touches.length < 2) return
     const el = containerRef.current
     if (!el) return
+    stopMotion()
     // The two most recent, so a third finger resting on the screen does not
     // silently anchor the gesture somewhere the operator is not pinching.
     const [[aId, a], [bId, b]] = touches.slice(-2)
@@ -248,10 +459,15 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       lastMidY: (a.y + b.y) / 2 - rect.top,
     }
     setIsPanning(true)
-  }, [])
+  }, [stopMotion])
 
   const onPointerDown = useCallback((e: PointerEvent<HTMLElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    // A press stops the map dead, wherever it was going. A press that STOPPED a
+    // moving map is that and nothing more: counted as a drag, so it cannot also
+    // select whichever bin happened to slide under the finger.
+    const stoppedMotion = motionRef.current != null
+    stopMotion()
     panStateRef.current = {
       pointerId: e.pointerId,
       lastX: e.clientX,
@@ -259,10 +475,12 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       startX: e.clientX,
       startY: e.clientY,
       captured: false,
+      samples: [{ t: performance.now(), x: e.clientX, y: e.clientY }],
+      fromPinch: false,
     }
-    movedRef.current = false
+    movedRef.current = stoppedMotion
     setIsPanning(true)
-  }, [])
+  }, [stopMotion])
 
   const onPointerMove = useCallback((e: PointerEvent<HTMLElement>) => {
     const pinch = pinchRef.current
@@ -284,7 +502,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
         midY,
         dMidX: midX - pinch.lastMidX,
         dMidY: midY - pinch.lastMidY,
-      }))
+      }, limitsRef.current))
       pinch.lastMidX = midX
       pinch.lastMidY = midY
       return
@@ -295,6 +513,9 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     const dy = e.clientY - pan.lastY
     pan.lastX = e.clientX
     pan.lastY = e.clientY
+    const now = performance.now()
+    // Keep only the tail the release velocity is measured over.
+    pan.samples = [...pan.samples.filter((s) => now - s.t <= VELOCITY_WINDOW_MS), { t: now, x: e.clientX, y: e.clientY }]
     if (!pan.captured && Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) > DRAG_THRESHOLD_PX) {
       movedRef.current = true
       // Take capture now, the first time this session crosses the drag
@@ -310,6 +531,8 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     const pinch = pinchRef.current
     if (pinch && (e.pointerId === pinch.a || e.pointerId === pinch.b)) {
       pinchRef.current = null
+      // The pinch has ended: draw the scene at the scale it ended on.
+      setSettledScale(viewportRef.current.scale)
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
@@ -323,6 +546,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
         const [id, p] = rest[0]
         panStateRef.current = {
           pointerId: id, lastX: p.x, lastY: p.y, startX: p.x, startY: p.y, captured: false,
+          samples: [], fromPinch: true,
         }
         movedRef.current = true
         return
@@ -336,9 +560,13 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
       panStateRef.current = null
+      // Only a real drag throws; a cancelled pointer (the OS took it) never does.
+      if (pan.captured && !pan.fromPinch && e.type !== 'pointercancel') {
+        glide(releaseVelocity(pan.samples, performance.now()))
+      }
     }
     setIsPanning(false)
-  }, [])
+  }, [glide])
 
   const didDrag = useCallback(() => movedRef.current, [])
 
@@ -347,29 +575,38 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     const el = containerRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    setViewport((vp) => zoomByFactor(vp, factor, rect.width / 2, rect.height / 2))
-  }, [])
+    const centre = { x: rect.width / 2, y: rect.height / 2 }
+    // A second press while the first is still moving chains from where the
+    // first was GOING, so two quick presses are two full steps.
+    const base = motionRef.current?.target ?? viewportRef.current
+    animateTo(zoomByFactor(base, factor, centre.x, centre.y, limitsRef.current), centre)
+  }, [animateTo])
 
   const zoomIn = useCallback(() => zoomAtCenter(BUTTON_ZOOM_FACTOR), [zoomAtCenter])
   const zoomOut = useCallback(() => zoomAtCenter(1 / BUTTON_ZOOM_FACTOR), [zoomAtCenter])
+
+  const panStep = useCallback((dx: number, dy: number) => {
+    stopMotion()
+    setViewport((vp) => panBy(vp, dx, dy))
+  }, [stopMotion])
 
   const onKeyDown = useCallback((e: KeyboardEvent<HTMLElement>) => {
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault()
-        setViewport((vp) => panBy(vp, 0, PAN_STEP_PX))
+        panStep(0, PAN_STEP_PX)
         break
       case 'ArrowDown':
         e.preventDefault()
-        setViewport((vp) => panBy(vp, 0, -PAN_STEP_PX))
+        panStep(0, -PAN_STEP_PX)
         break
       case 'ArrowLeft':
         e.preventDefault()
-        setViewport((vp) => panBy(vp, PAN_STEP_PX, 0))
+        panStep(PAN_STEP_PX, 0)
         break
       case 'ArrowRight':
         e.preventDefault()
-        setViewport((vp) => panBy(vp, -PAN_STEP_PX, 0))
+        panStep(-PAN_STEP_PX, 0)
         break
       case '+':
       case '=':
@@ -387,10 +624,12 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       default:
         break
     }
-  }, [zoomIn, zoomOut, fit])
+  }, [panStep, zoomIn, zoomOut, fit])
 
   return {
     viewport,
+    settledScale,
+    inMotion,
     containerRef,
     handlers: {
       onPointerDown,

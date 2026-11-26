@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import {
   MIN_SCALE,
   MAX_SCALE,
+  FLOOR_MIN_SCALE,
   clampScale,
   zoomAtPoint,
   zoomByFactor,
@@ -10,6 +11,10 @@ import {
   applyPinch,
   contentBounds,
   fitToBounds,
+  interpolateViewport,
+  easeOutCubic,
+  clampViewport,
+  scaleLimitsForFit,
   type Viewport,
 } from '../components/inventory/warehouse/mapViewport'
 import type { LayoutPlacement, LayoutObject } from '../types'
@@ -238,11 +243,14 @@ describe('fitToBounds', () => {
     expect(Number.isFinite(vp.ty)).toBe(true)
   })
 
-  it('clamps scale for a very large bounds (would otherwise zoom out past MIN_SCALE)', () => {
+  // NX-0047: the fit is clamped to FLOOR_MIN_SCALE, not MIN_SCALE. A floor that
+  // only fits below 0.4 is shown whole; the old clamp left most of it off-screen.
+  it('clamps scale for a very large bounds (would otherwise zoom out past FLOOR_MIN_SCALE)', () => {
     const bounds = { minX: 0, minY: 0, maxX: 100000, maxY: 100000 }
     const container = { width: 400, height: 300 }
     const vp = fitToBounds(bounds, container, 10)
-    expect(vp.scale).toBe(MIN_SCALE)
+    expect(vp.scale).toBe(FLOOR_MIN_SCALE)
+    expect(vp.scale).toBeLessThan(MIN_SCALE)
   })
 
   it('handles a zero-area bounds (a single point) without dividing by zero', () => {
@@ -323,5 +331,57 @@ describe('applyPinch', () => {
     expect(Number.isFinite(after.scale)).toBe(true)
     expect(Number.isFinite(after.tx)).toBe(true)
     expect(Number.isFinite(after.ty)).toBe(true)
+  })
+})
+
+// ── NX-0047 ──────────────────────────────────────────────────────────────────
+
+describe('interpolateViewport', () => {
+  it('interpolates zoom in log space and eases out', () => {
+    const from: Viewport = { scale: 1, tx: 0, ty: 0 }
+    const to: Viewport = { scale: 4, tx: 100, ty: 50 }
+    expect(interpolateViewport(from, to, 0)).toEqual(from)
+    expect(interpolateViewport(from, to, 1)).toEqual(to)
+
+    const half = interpolateViewport(from, to, 0.5)
+    // Log space: equal time is an equal zoom RATIO, so the geometric midpoint (2)
+    // rather than the arithmetic one (2.5); eased out, so already past it at 0.5.
+    expect(half.scale).toBeCloseTo(4 ** easeOutCubic(0.5), 9)
+    expect(half.scale).toBeGreaterThan(2)
+    expect(easeOutCubic(0)).toBe(0)
+    expect(easeOutCubic(1)).toBe(1)
+
+    // Anchored (a button zoom about the centre): the world point under the anchor
+    // stays put on every frame, so the map grows from where you are looking.
+    const anchorFrom: Viewport = { scale: 1, tx: 10, ty: 20 }
+    const anchorTo = zoomAtPoint(anchorFrom, 3, 200, 150)
+    const before = worldPoint(anchorFrom, 200, 150)
+    for (const t of [0.1, 0.4, 0.7]) {
+      const mid = interpolateViewport(anchorFrom, anchorTo, t, { x: 200, y: 150 })
+      expect(worldPoint(mid, 200, 150).x).toBeCloseTo(before.x, 9)
+      expect(worldPoint(mid, 200, 150).y).toBeCloseTo(before.y, 9)
+    }
+  })
+})
+
+describe('clampViewport', () => {
+  it('lets a floor larger than the screen zoom out past its fit', () => {
+    // A 1800 x 900 px floor on a 360 px handheld fits at 0.2, under the old fixed
+    // 0.4 minimum, which left most of the warehouse permanently off-screen.
+    const fitted = fitToBounds({ minX: 0, minY: 0, maxX: 1800, maxY: 900 }, { width: 360, height: 600 }, 0)
+    expect(fitted.scale).toBeCloseTo(0.2, 9)
+
+    const limits = scaleLimitsForFit(fitted.scale)
+    expect(limits.min).toBeLessThan(fitted.scale)
+    expect(limits.max).toBe(MAX_SCALE)
+
+    const out = zoomByFactor(fitted, 0.8, 180, 300, limits)
+    expect(out.scale).toBeCloseTo(0.16, 9)
+    expect(clampViewport(out, limits, 180, 300)).toBe(out)
+
+    // ...but not without end.
+    expect(clampViewport({ ...fitted, scale: 0.01 }, limits, 180, 300).scale).toBe(limits.min)
+    // A small floor keeps the old minimum: no reason to shrink it to a dot.
+    expect(scaleLimitsForFit(1.5).min).toBe(MIN_SCALE)
   })
 })

@@ -8,8 +8,23 @@
 
 import type { LayoutPlacement, LayoutObject } from '@/types'
 
+/** The default zoom-out limit, for a floor that fits the screen at or above it. */
 export const MIN_SCALE = 0.4
 export const MAX_SCALE = 3
+/** The absolute floor under every limit: a fitted view never goes below this,
+ *  however large the warehouse or small the screen (NX-0047). */
+export const FLOOR_MIN_SCALE = 0.05
+/** How far past the fitted view a large floor may be zoomed out. */
+const FIT_ZOOM_OUT_ROOM = 0.6
+
+/** The zoom range in force. Defaults to [MIN_SCALE, MAX_SCALE]; a floor that only
+ *  fits below MIN_SCALE gets a lower minimum from `scaleLimitsForFit`. */
+export interface ScaleLimits {
+  min: number
+  max: number
+}
+
+export const DEFAULT_SCALE_LIMITS: ScaleLimits = { min: MIN_SCALE, max: MAX_SCALE }
 
 export interface Viewport {
   scale: number
@@ -29,10 +44,73 @@ export interface Bounds {
   maxY: number
 }
 
-/** Clamp a scale factor into [MIN_SCALE, MAX_SCALE]. NaN/Infinity fall back to MIN_SCALE. */
-export function clampScale(k: number): number {
-  if (!Number.isFinite(k)) return MIN_SCALE
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, k))
+/** Clamp a scale factor into the limits (default [MIN_SCALE, MAX_SCALE]).
+ *  NaN/Infinity fall back to the minimum. */
+export function clampScale(k: number, limits: ScaleLimits = DEFAULT_SCALE_LIMITS): number {
+  if (!Number.isFinite(k)) return limits.min
+  return Math.min(limits.max, Math.max(limits.min, k))
+}
+
+/**
+ * The zoom range for a floor whose fitted view is at `fitScale`. A floor that
+ * fits at or above MIN_SCALE keeps the default range. A larger one (or a smaller
+ * screen) may zoom out a little past its own fit, so the whole warehouse is never
+ * out of reach, which it was on a handheld under the fixed 0.4 minimum.
+ */
+export function scaleLimitsForFit(fitScale: number): ScaleLimits {
+  if (!Number.isFinite(fitScale) || fitScale <= 0) return DEFAULT_SCALE_LIMITS
+  const min = Math.max(FLOOR_MIN_SCALE, Math.min(MIN_SCALE, fitScale * FIT_ZOOM_OUT_ROOM))
+  return { min, max: MAX_SCALE }
+}
+
+/** Bring a viewport back inside `limits`, anchored at (cx,cy). Returned unchanged
+ *  (the same object) when it is already inside. */
+export function clampViewport(vp: Viewport, limits: ScaleLimits, cx: number, cy: number): Viewport {
+  const k = clampScale(vp.scale, limits)
+  if (k === vp.scale) return vp
+  const ratio = k / vp.scale
+  return { scale: k, tx: cx - (cx - vp.tx) * ratio, ty: cy - (cy - vp.ty) * ratio }
+}
+
+/** Fast at first, settling gently: what a camera move should feel like. */
+export function easeOutCubic(t: number): number {
+  const c = Math.max(0, Math.min(1, t))
+  return 1 - (1 - c) ** 3
+}
+
+/**
+ * The viewport `t` (0..1, linear time) of the way from `from` to `to`, eased out.
+ *
+ * Scale moves in LOG space: equal time is an equal zoom ratio, so a 1→4 zoom
+ * does not rush its first doubling. With an `anchor`, the world point under it
+ * stays fixed on every frame (a zoom about a point): the translation is derived
+ * from the scale rather than interpolated, which would bow the path. Without one
+ * the translation moves in step with the eased time (a Fit or a floor change,
+ * which have no fixed point).
+ */
+export function interpolateViewport(
+  from: Viewport,
+  to: Viewport,
+  t: number,
+  anchor?: { x: number; y: number },
+): Viewport {
+  if (t <= 0) return from
+  if (t >= 1) return to
+  const e = easeOutCubic(t)
+  const scale = from.scale * (to.scale / from.scale) ** e
+  if (anchor) {
+    const ratio = scale / from.scale
+    return {
+      scale,
+      tx: anchor.x - (anchor.x - from.tx) * ratio,
+      ty: anchor.y - (anchor.y - from.ty) * ratio,
+    }
+  }
+  return {
+    scale,
+    tx: from.tx + (to.tx - from.tx) * e,
+    ty: from.ty + (to.ty - from.ty) * e,
+  }
 }
 
 /**
@@ -45,9 +123,15 @@ export function clampScale(k: number): number {
  * a limit), the viewport is returned unchanged — no drift while scrolling
  * past the limit.
  */
-export function zoomAtPoint(vp: Viewport, nextScale: number, cx: number, cy: number): Viewport {
-  const k = clampScale(vp.scale)
-  const k2 = clampScale(nextScale)
+export function zoomAtPoint(
+  vp: Viewport,
+  nextScale: number,
+  cx: number,
+  cy: number,
+  limits: ScaleLimits = DEFAULT_SCALE_LIMITS,
+): Viewport {
+  const k = clampScale(vp.scale, limits)
+  const k2 = clampScale(nextScale, limits)
   if (k2 === k) return vp
   const ratio = k2 / k
   return {
@@ -58,9 +142,15 @@ export function zoomAtPoint(vp: Viewport, nextScale: number, cx: number, cy: num
 }
 
 /** Multiply current scale by `factor`, clamped, anchored at (cx,cy). */
-export function zoomByFactor(vp: Viewport, factor: number, cx: number, cy: number): Viewport {
+export function zoomByFactor(
+  vp: Viewport,
+  factor: number,
+  cx: number,
+  cy: number,
+  limits: ScaleLimits = DEFAULT_SCALE_LIMITS,
+): Viewport {
   const safeFactor = Number.isFinite(factor) && factor > 0 ? factor : 1
-  return zoomAtPoint(vp, vp.scale * safeFactor, cx, cy)
+  return zoomAtPoint(vp, vp.scale * safeFactor, cx, cy, limits)
 }
 
 /** Pan the viewport by (dx,dy) pixels. Scale is untouched. */
@@ -96,8 +186,8 @@ export interface PinchStep {
  * and MAX_SCALE. Doing it the other way round would work too, but this way the pan
  * is never scaled by a zoom that did not happen.
  */
-export function applyPinch(vp: Viewport, step: PinchStep): Viewport {
-  const zoomed = zoomAtPoint(vp, step.targetScale, step.midX, step.midY)
+export function applyPinch(vp: Viewport, step: PinchStep, limits: ScaleLimits = DEFAULT_SCALE_LIMITS): Viewport {
+  const zoomed = zoomAtPoint(vp, step.targetScale, step.midX, step.midY, limits)
   return panBy(zoomed, step.dMidX, step.dMidY)
 }
 
@@ -151,7 +241,9 @@ export function contentBounds(
  * - Zero/negative container width or height → identity viewport (scale 1, no offset).
  * - Zero-area bounds (a single point, or minX===maxX) → scale clamps to
  *   MAX_SCALE (nothing to fit against) and the point is centered.
- * - The computed scale is always clamped to [MIN_SCALE, MAX_SCALE].
+ * - The computed scale is clamped to [FLOOR_MIN_SCALE, MAX_SCALE], NOT to
+ *   MIN_SCALE: a floor that only fits below 0.4 must still be shown whole
+ *   (NX-0047). The caller widens its zoom range to match (scaleLimitsForFit).
  */
 export function fitToBounds(bounds: Bounds, container: Size, padding = 24): Viewport {
   const { width, height } = container
@@ -173,7 +265,7 @@ export function fitToBounds(bounds: Bounds, container: Size, padding = 24): View
   } else {
     scale = Math.min(availW / boundsW, availH / boundsH)
   }
-  scale = clampScale(scale)
+  scale = clampScale(scale, { min: FLOOR_MIN_SCALE, max: MAX_SCALE })
 
   const contentCx = (bounds.minX + bounds.maxX) / 2
   const contentCy = (bounds.minY + bounds.maxY) / 2

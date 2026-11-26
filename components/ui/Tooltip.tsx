@@ -187,4 +187,108 @@ export function Tooltip({ text, label, align = 'left', className = '' }: Tooltip
   )
 }
 
+// ── HoverHint: the same panel, hung off a control that already has a job ────
+//
+// `Tooltip` above renders its OWN trigger — an (i) button whose click pins the
+// hint open. That is wrong for a control that does something when pressed: a
+// second button beside "Zoom in" would be a second thing named "Zoom in", and a
+// click must zoom, not pin. So this wraps the caller's control instead:
+//
+//   - hover and KEYBOARD focus open it; a press closes it and never pins it;
+//   - it adds no button and no accessible name. The wrapped control keeps its own
+//     `aria-label`, and the hint is `aria-hidden` because it only repeats that
+//     label plus a key the control should declare itself (`aria-keyshortcuts`);
+//   - `:focus-visible`, not focus: a tap focuses the button too, and on a
+//     handheld that would leave the hint stuck over the map until the next tap.
+//
+// Placement is `placePopover`, as above, unless `side="left"` fits — which is what
+// a vertical stack wants, where a hint below one button covers the next.
+
+const HINT_GAP = 8
+const HINT_HEIGHT = 28
+/** Advance of the 12px body face, generous: over-estimating only moves the
+ *  clamp in early, under-estimating lets the panel leave the screen. */
+const HINT_CHAR_PX = 7
+const HINT_PADDING_PX = 20
+
+export type HoverHintProps = {
+  /** A few words, e.g. "Zoom in (+)". */
+  text: string
+  children: React.ReactNode
+  /** `left` hangs the hint beside the control when there is room for it. */
+  side?: 'below' | 'left'
+  className?: string
+}
+
+type HintPosition = { left: number; top: number }
+
+function placeHint(rect: DOMRect, text: string, side: 'below' | 'left'): HintPosition {
+  const width = text.length * HINT_CHAR_PX + HINT_PADDING_PX
+  const besideLeft = rect.left - HINT_GAP - width
+  if (side === 'left' && besideLeft >= VIEWPORT_MARGIN) {
+    return { left: besideLeft, top: rect.top + (rect.height - HINT_HEIGHT) / 2 }
+  }
+  const placed = placePopover({
+    trigger: rect,
+    preferredWidth: width,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    margin: VIEWPORT_MARGIN,
+    gap: HINT_GAP,
+    preferredMaxHeight: HINT_HEIGHT,
+  })
+  return { left: placed.left, top: placed.top }
+}
+
+export function HoverHint({ text, children, side = 'below', className = '' }: HoverHintProps) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<HintPosition | null>(null)
+  const wrapRef = useRef<HTMLSpanElement | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const el = wrapRef.current
+    if (el) setPos(placeHint(el.getBoundingClientRect(), text, side))
+  }, [open, text, side])
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  return (
+    <span
+      ref={wrapRef}
+      className={`inline-flex ${className}`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={(e) => {
+        if ((e.target as Element).matches?.(':focus-visible')) setOpen(true)
+      }}
+      onBlur={() => setOpen(false)}
+      onPointerDown={() => setOpen(false)}
+    >
+      {children}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: TOOLTIP_Z }}
+            className="pointer-events-none whitespace-nowrap rounded-md bg-stone-900 px-2 py-1 text-xs font-medium leading-5 text-white shadow-lg"
+          >
+            {text}
+          </div>,
+          document.body,
+        )}
+    </span>
+  )
+}
+
 export default Tooltip

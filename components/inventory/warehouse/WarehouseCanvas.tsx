@@ -22,6 +22,17 @@
 // Layer order, bottom to top: zone washes → grid → zone outlines → structural
 // objects → bins (fill, level spine, labels) → zone names → exploded level
 // stack → marker overlays.
+//
+// ── Colour, type and depth (NX-0047) ────────────────────────────────────────
+// No colour is typed in this file. Chrome colours (ink, halo, grid, scrim,
+// selection) are `var(--color-map-*)` tokens from mapTokens.ts; the rest are
+// DATA (a storage form's colour, a level role's, a zone's tint) and arrive
+// through props or the shared palette. Text is set in the app's own faces.
+//
+// Depth is two shared definitions in the <defs> at the bottom of this file:
+// ONE drop-shadow filter, referenced by the single <g> that wraps every rack —
+// never by a rack or a bin, which would be a filter pass each on a floor of 189
+// bays — and one top-to-bottom sheen gradient laid over each rack's fill.
 
 import { useMemo, useState, type ReactNode, type CSSProperties } from 'react'
 import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
@@ -36,6 +47,7 @@ import { spineRows, spineFits, rollupFill } from './levelSpine'
 import { zoneTint, zoneTypeLabel, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from './zoneTints'
 import type { ZoneRegion } from './zoneRegions'
 import type { Viewport } from './mapViewport'
+import { MAP_COLOR, MAP_FONT, MAP_RACK_SHADOW_ID, MAP_SHEEN_ID } from './mapTokens'
 
 /** Sentinel meaning "explicitly collapsed" — distinct from `null` ("no manual
  *  override; derive expansion from `selectedLocationId`"), see `expandedKey`. */
@@ -147,6 +159,14 @@ export interface WarehouseCanvasProps {
   /** Admin/Manager clicked a floor sign's text to edit or remove it (mig 00097).
    *  Omitted → signs are inert, which is what every read-only surface wants. */
   onEditSign?: (signName: string) => void
+  /** The scale the scene is DRAWN at (NX-0047): text sizes, label tiers and
+   *  hairlines are computed from it, and it changes only once a zoom stops.
+   *  The live `viewport.scale` still moves the picture every frame, on the
+   *  transform. Absent → the live scale (the scene then rebuilds per frame). */
+  settledScale?: number
+  /** The map is moving (pan, pinch, glide, zoom). Drops the rack shadow for the
+   *  duration, so a moving frame is one cheap raster rather than a filter pass. */
+  moving?: boolean
 }
 
 export function WarehouseCanvas({
@@ -172,6 +192,8 @@ export function WarehouseCanvas({
   onHoverBin,
   onRenameArea,
   onEditSign,
+  settledScale,
+  moving = false,
 }: WarehouseCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). A level whose role has been
   // retired still renders with its own colour, because getLevelRoles returns
@@ -179,7 +201,9 @@ export function WarehouseCanvas({
   const { data: levelRoles = [] } = useLevelRoles()
   const cell = BASE_CELL
   const { gridWidth, gridHeight } = layout
-  const scale = viewport.scale
+  // The SETTLED scale, not the live one: see the prop. Everything in the scene
+  // memo reads this, so a zoom in progress costs one attribute per frame.
+  const scale = settledScale ?? viewport.scale
 
   // These three are memoized for identity, not for the cost of the work: they
   // are dependencies of the scene memo below, and `filter` returns a fresh array
@@ -297,20 +321,18 @@ export function WarehouseCanvas({
     return (
       <>
         {/* Zone washes — under the grid so the grid still reads through them. */}
+        {/* One path per zone, not a rect per cell: the cells are unit squares
+            in one path, so they fill as a union with no seams between them. */}
         {zoneRegions?.map((region) => {
           const tint = zoneTint(
             region.zoneProfileId != null ? zoneTypeByProfileId?.get(region.zoneProfileId) : null,
           )
           return (
-            <g key={`zone-fill-${region.zoneId}`} pointerEvents="none">
-              {region.cells.map((c) => (
-                <rect
-                  key={`${c.x}:${c.y}`}
-                  x={c.x * cell} y={c.y * cell} width={cell} height={cell}
-                  fill={tint} fillOpacity={ZONE_FILL_OPACITY}
-                />
-              ))}
-            </g>
+            <path
+              key={`zone-fill-${region.zoneId}`} pointerEvents="none"
+              d={cellsPath(region.cells, cell)}
+              fill={tint} fillOpacity={ZONE_FILL_OPACITY}
+            />
           )
         })}
 
@@ -333,21 +355,26 @@ export function WarehouseCanvas({
           )
         })}
 
-        {/* Grid lines */}
-        {Array.from({ length: gridWidth + 1 }, (_, i) => (
-          <line
-            key={`v${i}`}
-            x1={i * cell} y1={0} x2={i * cell} y2={gridHeight * cell}
-            stroke="#e7e5e4" strokeWidth={1} vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {Array.from({ length: gridHeight + 1 }, (_, i) => (
-          <line
-            key={`h${i}`}
-            x1={0} y1={i * cell} x2={gridWidth * cell} y2={i * cell}
-            stroke="#e7e5e4" strokeWidth={1} vectorEffect="non-scaling-stroke"
-          />
-        ))}
+        {/* Grid: one patterned rect, not a <line> per row and column. The
+            stroke is counter-scaled by hand (u(1)) because vector-effect is not
+            honoured inside a pattern tile. Below GRID_MIN_CELL_PX on screen the
+            lines would be closer than they are wide, a grey moiré rather than a
+            grid, so the grid is left out and the floor shows through. */}
+        {cellPx >= GRID_MIN_CELL_PX && (
+          <>
+            <defs>
+              <pattern id={MAP_GRID_ID} width={cell} height={cell} patternUnits="userSpaceOnUse">
+                <path d={`M ${cell} 0 L 0 0 0 ${cell}`} fill="none" stroke={MAP_COLOR.grid} strokeWidth={u(1)} />
+              </pattern>
+            </defs>
+            <rect
+              pointerEvents="none"
+              x={0} y={0} width={gridWidth * cell} height={gridHeight * cell}
+              fill={`url(#${MAP_GRID_ID})`}
+              stroke={MAP_COLOR.grid} strokeWidth={1} vectorEffect="non-scaling-stroke"
+            />
+          </>
+        )}
 
         {/* Zone outlines — only the edges facing out of each region, so an
             L-shaped zone traces its notch instead of being boxed in. */}
@@ -411,7 +438,7 @@ export function WarehouseCanvas({
               key={`name-${o.id}`} pointerEvents="none"
               x={o.x * cell + (o.w * cell) / 2} y={o.y * cell + (o.h * cell) / 2 + u(3.5)}
               textAnchor="middle" fontSize={u(10)} fontWeight={600}
-              fill="#44403c" fontFamily="sans-serif"
+              fill={MAP_COLOR.ink} fontFamily={MAP_FONT.sans}
             >
               {fitCode(name, o.w * cell, u(10))}
             </text>
@@ -422,17 +449,18 @@ export function WarehouseCanvas({
             above), so a levelled rack paints once instead of N overlapping
             times. A legacy group (isLegacyBin) keeps the original single-bin
             appearance; only its labelling is new. */}
+        <g data-rack-layer filter={`url(#${MAP_RACK_SHADOW_ID})`}>
         {placementGroups.map((group, i) => {
           const p = group.items[0]
           const selected = group.items.some((item) => item.locationId === selectedLocationId)
           const highlighted = group.items.some((item) => highlightedLocationIds?.has(item.locationId))
           const isRack = !group.isLegacyBin
           const tier = tierFor(p)
-          const stroke = selected
-            ? PLACEMENT_FILL.selectedStroke
-            : highlighted
-              ? PLACEMENT_FILL.highlightStroke
-              : DEFAULT_BIN_STROKE
+          // Selection is no longer said by this stroke — it is the two rings drawn
+          // by `selectionRings` below, which read on any fill.
+          const stroke = highlighted ? PLACEMENT_FILL.highlightStroke : DEFAULT_BIN_STROKE
+          const binClass = `wh-bin wh-bin-in${selected ? ' wh-bin-selected' : ''}`
+          const stagger = { '--wh-i': Math.min(i, 40) } as CSSProperties
           const rectX = p.x * cell + 1
           const rectY = p.y * cell + 1
           const rectW = p.w * cell - 2
@@ -463,26 +491,29 @@ export function WarehouseCanvas({
                   locationId: p.locationId, x: p.x, y: p.y, w: p.w, h: p.h, levelCount: 0, fillPct,
                 })}
                 onPointerLeave={() => onHoverBin?.(null)}
+                className="wh-cell"
                 style={{ cursor: 'pointer' }}
               >
                 <rect
-                  className="wh-bin wh-bin-in"
-                  style={{ '--wh-i': Math.min(i, 40) } as CSSProperties}
+                  className={binClass}
+                  style={stagger}
                   x={rectX} y={rectY} width={rectW} height={rectH}
-                  fill={fill} stroke={stroke} strokeWidth={selected ? 3 : highlighted ? 2 : 1.5} rx={3}
+                  fill={fill} stroke={stroke} strokeWidth={highlighted ? 2 : 1.5} rx={3}
                   vectorEffect="non-scaling-stroke"
                 />
+                {sheen(rectX, rectY, rectW, rectH, stagger)}
                 {info && <title>{hoverTitle(info, fillPct, 0)}</title>}
                 {renderBinLabel({ tier, u, info, sharedPrefix, fillPct, levelCount: 0, rectX, rectY, rectW, rectH, cellPx })}
                 {badge && tier !== 'none' && (
                   <text
                     x={rectX + rectW - u(2)} y={rectY + u(9)}
-                    textAnchor="end" fontSize={u(8)} fill="#334155" fontFamily="monospace"
+                    textAnchor="end" fontSize={u(8)} fill={MAP_COLOR.inkMuted} fontFamily={MAP_FONT.mono}
                     pointerEvents="none"
                   >
                     {badge}
                   </text>
                 )}
+                {selected && selectionRings(rectX, rectY, rectW, rectH, u)}
               </g>
             )
           }
@@ -526,15 +557,17 @@ export function WarehouseCanvas({
                 levelCount: rows.length, fillPct: rackFill,
               })}
               onPointerLeave={() => onHoverBin?.(null)}
+              className="wh-cell"
               style={{ cursor: 'pointer' }}
             >
               <rect
-                className="wh-bin wh-bin-in"
-                style={{ '--wh-i': Math.min(i, 40) } as CSSProperties}
+                className={binClass}
+                style={stagger}
                 x={rectX} y={rectY} width={rectW} height={rectH}
-                fill={fill} stroke={stroke} strokeWidth={selected ? 3 : highlighted ? 2 : 1.5} rx={3}
+                fill={fill} stroke={stroke} strokeWidth={highlighted ? 2 : 1.5} rx={3}
                 vectorEffect="non-scaling-stroke"
               />
+              {sheen(rectX, rectY, rectW, rectH, stagger)}
               {rackInfo && <title>{hoverTitle(rackInfo, rackFill, rows.length)}</title>}
 
               {/* Level spine: one stripe per level, BOTTOM-FIRST so L1 sits at
@@ -589,9 +622,11 @@ export function WarehouseCanvas({
                 // With a spine behind it the code needs a plate to stay legible.
                 plate: showSpine,
               })}
+              {selected && selectionRings(rectX, rectY, rectW, rectH, u)}
             </g>
           )
         })}
+        </g>
 
         {/* Area names — same wayfinding layer as the zone names below, and for
             the same reason: an area label matters MOST when zoomed out, where no
@@ -626,9 +661,9 @@ export function WarehouseCanvas({
               key={`area-name-${region.key}`}
               x={anchor.x * cell + u(3)}
               y={anchor.y * cell + u(11)}
-              fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
+              fontSize={u(12)} fontWeight={700} fontFamily={MAP_FONT.sans}
               fill={areaFill(region)}
-              stroke="#fff" strokeWidth={u(3)} paintOrder="stroke" strokeLinejoin="round"
+              stroke={MAP_COLOR.halo} strokeWidth={u(3)} paintOrder="stroke" strokeLinejoin="round"
               pointerEvents={clickable ? 'auto' : 'none'}
               style={clickable ? { cursor: 'pointer' } : undefined}
               onClick={clickable ? (e: { stopPropagation: () => void }) => {
@@ -667,7 +702,7 @@ export function WarehouseCanvas({
               x={(b.x + b.w / 2) * cell}
               y={(b.y + b.h / 2) * cell + u(3.5)}
               textAnchor="middle" fontSize={u(10)} fontWeight={600}
-              fill="#44403c" fontFamily="sans-serif"
+              fill={MAP_COLOR.ink} fontFamily={MAP_FONT.sans}
               pointerEvents={clickable ? 'auto' : 'none'}
               style={clickable ? { cursor: 'pointer' } : undefined}
               onClick={clickable ? (e: { stopPropagation: () => void }) => {
@@ -726,9 +761,9 @@ export function WarehouseCanvas({
               // there. This also keeps the label inside the content bounds
               // `fit()` measures, which the old negative-y clamp existed to do.
               y={region.labelAt.y * cell + u(11)}
-              fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
+              fontSize={u(12)} fontWeight={700} fontFamily={MAP_FONT.sans}
               fill={zoneTint(type)}
-              stroke="#fff" strokeWidth={u(3)} paintOrder="stroke" strokeLinejoin="round"
+              stroke={MAP_COLOR.halo} strokeWidth={u(3)} paintOrder="stroke" strokeLinejoin="round"
               pointerEvents="none"
             >
               {fitted}
@@ -813,7 +848,7 @@ export function WarehouseCanvas({
             <g>
               <rect
                 x={0} y={0} width={gridPxW} height={gridPxH}
-                fill="rgba(15,23,42,0.45)"
+                fill={MAP_COLOR.scrim}
                 onClick={() => guard(() => setExpandOverride(COLLAPSED))}
                 style={{ cursor: 'pointer' }}
               />
@@ -840,7 +875,7 @@ export function WarehouseCanvas({
                     <rect
                       x={stackX} y={y} width={stackW} height={rowH} rx={u(4)}
                       fill={levelRoleFill(levelRoles, row.role)}
-                      stroke={isSelected ? PLACEMENT_FILL.selectedStroke : levelRoleStroke(levelRoles, row.role)}
+                      stroke={isSelected ? MAP_COLOR.selection : levelRoleStroke(levelRoles, row.role)}
                       strokeWidth={isSelected ? 2.5 : 1.5}
                       vectorEffect="non-scaling-stroke"
                     />
@@ -852,7 +887,7 @@ export function WarehouseCanvas({
                     </title>
                     <text
                       x={stackX + padX} y={y + rowH / 2 + font * 0.35}
-                      fontSize={font} fontFamily="monospace" fill="#1c1917"
+                      fontSize={font} fontFamily={MAP_FONT.mono} fill={MAP_COLOR.ink}
                       pointerEvents="none"
                     >
                       {prefix}{code}
@@ -860,7 +895,8 @@ export function WarehouseCanvas({
                     {row.meta && (
                       <text
                         x={stackX + stackW - padX} y={y + rowH / 2 + metaFont * 0.35}
-                        textAnchor="end" fontSize={metaFont} fontFamily="sans-serif" fill="#44403c"
+                        textAnchor="end" fontSize={metaFont} fontFamily={MAP_FONT.sans} fill={MAP_COLOR.inkMuted}
+                        style={TABULAR}
                         pointerEvents="none"
                       >
                         {row.meta}
@@ -891,11 +927,87 @@ export function WarehouseCanvas({
       className="block h-full w-full"
       role="img"
       aria-label={`${layout.name} floor ${floor + 1}`}
+      data-moving={moving || undefined}
     >
+      {SCENE_DEFS}
       <g transform={`translate(${viewport.tx},${viewport.ty}) scale(${viewport.scale})`}>
         {scene}
       </g>
     </svg>
+  )
+}
+
+/** Figures that change under the eye (a fill %) must not shimmy as they do. */
+const TABULAR: CSSProperties = { fontVariantNumeric: 'tabular-nums' }
+
+/** The grid's pattern tile. One canvas is mounted at a time, so a fixed id is safe,
+ *  as it is for the shadow and sheen in SCENE_DEFS. */
+const MAP_GRID_ID = 'wh-map-grid'
+/** Below this many screen pixels per cell the grid is noise, not structure. */
+const GRID_MIN_CELL_PX = 6
+
+/** A set of grid cells as ONE path of unit squares: the cells fill as a union. */
+function cellsPath(cells: readonly { x: number; y: number }[], cell: number): string {
+  return cells.map((c) => `M${c.x * cell} ${c.y * cell}h${cell}v${cell}h${-cell}z`).join('')
+}
+
+/**
+ * The scene's two shared definitions. A module constant, so it is one element
+ * with one identity for the life of the page: it sits OUTSIDE the scene memo and
+ * adds nothing to that memo's dependencies.
+ *
+ * The shadow's offset and blur are in user units, so it deepens as you zoom in
+ * and all but vanishes at the fitted view — which is what a real floor does, and
+ * what keeps a whole-floor view from turning into a field of smudges.
+ */
+const SCENE_DEFS = (
+  <defs>
+    <filter id={MAP_RACK_SHADOW_ID} x="-5%" y="-5%" width="110%" height="115%" colorInterpolationFilters="sRGB">
+      <feDropShadow dx={0} dy={1} stdDeviation={1.1} style={{ floodColor: MAP_COLOR.rackShadow }} />
+    </filter>
+    <linearGradient id={MAP_SHEEN_ID} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style={{ stopColor: MAP_COLOR.sheenLight }} />
+      <stop offset="0.55" style={{ stopColor: MAP_COLOR.sheenLight, stopOpacity: 0 }} />
+      <stop offset="1" style={{ stopColor: MAP_COLOR.sheenShade }} />
+    </linearGradient>
+  </defs>
+)
+
+/** A soft top-lit sheen over a rack's fill: light at the top edge, a trace of
+ *  shade at the bottom. One shared gradient; this is only the rect that wears
+ *  it. It rides the same load-in animation as the fill beneath it. */
+function sheen(x: number, y: number, w: number, h: number, stagger: CSSProperties): ReactNode {
+  return (
+    <rect
+      className="wh-bin-in" style={stagger} pointerEvents="none"
+      x={x} y={y} width={w} height={h} rx={3} fill={`url(#${MAP_SHEEN_ID})`}
+    />
+  )
+}
+
+/**
+ * The selected cell: a brand ring on the cell's edge and a white ring just
+ * inside it. Two rings because one cannot work everywhere — an emerald stroke
+ * disappears on an emerald fast-mover rack, and the white one alone disappears
+ * on an empty (white) bin. Together one of them always has contrast.
+ *
+ * Both stay inside the cell's own footprint, so a neighbour drawn later can
+ * never paint over half of the ring.
+ */
+function selectionRings(x: number, y: number, w: number, h: number, u: (px: number) => number): ReactNode {
+  const inset = Math.min(u(2.25), w / 4, h / 4)
+  return (
+    <g pointerEvents="none">
+      <rect
+        data-ring="outer" x={x} y={y} width={w} height={h} rx={3}
+        fill="none" stroke={MAP_COLOR.selection} strokeWidth={3} vectorEffect="non-scaling-stroke"
+      />
+      <rect
+        data-ring="inner"
+        x={x + inset} y={y + inset} width={Math.max(0, w - inset * 2)} height={Math.max(0, h - inset * 2)} rx={2}
+        fill="none" stroke={MAP_COLOR.selectionInner} strokeWidth={1.5} vectorEffect="non-scaling-stroke"
+      />
+    </g>
   )
 }
 
@@ -988,20 +1100,20 @@ function renderBinLabel({
           y={hasSecond ? cy - u(10) : cy - u(6)}
           width={code.length * codeFont * advance + u(4)}
           height={hasSecond ? u(20) : u(12)}
-          fill="#ffffff" fillOpacity={0.78} rx={u(2)}
+          fill={MAP_COLOR.halo} fillOpacity={0.82} rx={u(2)}
         />
       )}
       <text
         x={cx} y={hasSecond ? cy - u(0.5) : cy + u(3.2)}
         textAnchor="middle" fontSize={codeFont}
-        fontFamily={label.mono ? 'monospace' : 'sans-serif'} fill="#1c1917"
+        fontFamily={label.mono ? MAP_FONT.mono : MAP_FONT.sans} fontWeight={500} fill={MAP_COLOR.ink}
       >
         {code}
       </text>
       {hasSecond && (
         <text
           x={cx} y={cy + u(9)}
-          textAnchor="middle" fontSize={u(8)} fontFamily="monospace" fill="#57534e"
+          textAnchor="middle" fontSize={u(8)} fontFamily={MAP_FONT.mono} fill={MAP_COLOR.inkMuted}
         >
           {secondLine}
         </text>

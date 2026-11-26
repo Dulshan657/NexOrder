@@ -140,9 +140,9 @@ describe('WarehouseCanvas — label level of detail', () => {
   })
 
   it('counter-scales font size so text is a constant size on screen', () => {
-    const at1 = renderCanvas(1).container.querySelector('text[font-family="monospace"]')
+    const at1 = renderCanvas(1).container.querySelector('text[font-family="var(--font-mono)"]')
     cleanup()
-    const at3 = renderCanvas(3).container.querySelector('text[font-family="monospace"]')
+    const at3 = renderCanvas(3).container.querySelector('text[font-family="var(--font-mono)"]')
     const f1 = Number(at1?.getAttribute('font-size'))
     const f3 = Number(at3?.getAttribute('font-size'))
     expect(f1).toBeGreaterThan(0)
@@ -207,7 +207,8 @@ describe('WarehouseCanvas — areas', () => {
   it('tints and names the zone derived from its bins', () => {
     const { container } = renderCanvas(1)
     expect(container.textContent).toContain('Cold room · Cold')
-    const washes = container.querySelectorAll('rect[fill="#0ea5e9"]')
+    // One <path> per zone since NX-0047 (it was a <rect> per cell).
+    const washes = container.querySelectorAll('path[fill="#0ea5e9"]')
     expect(washes.length).toBeGreaterThan(0)
   })
 
@@ -299,5 +300,31 @@ describe('WarehouseCanvas — area vs zone label collision', () => {
     const far = texts(renderCanvas(0.4, { objects: area(long, row(12, 2, 2)) }).container)
       .find((t) => t.startsWith('Slow'))
     expect(near).toBe(far)
+  })
+})
+
+// NX-0047 A8. The shadow is ONE filter on the group holding every rack: a filter
+// per bin is a filter pass per bin, and MAIN has 189 bays over 945 levels.
+describe('WarehouseCanvas — depth', () => {
+  it('racks share one shadow filter on the group and a selected bin has two rings', () => {
+    const { container } = renderCanvas(1, { selectedLocationId: 10 })
+    const filters = container.querySelectorAll('svg > defs filter')
+    expect(filters.length).toBe(1)
+    const id = filters[0].getAttribute('id')
+    expect(id).toBeTruthy()
+
+    const shadowed = container.querySelectorAll(`g[filter="url(#${id})"]`)
+    expect(shadowed.length).toBe(1)
+    // Both racks sit inside that one group, and no rect carries a filter itself.
+    expect(shadowed[0].querySelectorAll('[data-testid^="rack-"]').length).toBe(2)
+    expect(container.querySelectorAll('rect[filter]').length).toBe(0)
+    // The sheen is a shared gradient too, never a per-bin definition.
+    expect(container.querySelectorAll('svg > defs linearGradient').length).toBe(1)
+
+    const rings = container.querySelectorAll('[data-testid="rack-10"] [data-ring]')
+    expect(Array.from(rings).map((r) => r.getAttribute('data-ring'))).toEqual(['outer', 'inner'])
+    expect(rings[0].getAttribute('stroke')).not.toBe(rings[1].getAttribute('stroke'))
+    // ...and only the selected one.
+    expect(container.querySelectorAll('[data-testid="rack-21"] [data-ring]').length).toBe(0)
   })
 })
