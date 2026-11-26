@@ -12,7 +12,8 @@ export interface OrderDraft {
   notes: string | null
   createdBy: string
   createdByName?: string
-  updatedBy: string
+  /** null once the last editor's login has been deleted. */
+  updatedBy: string | null
   updatedByName?: string
   createdAt: string
   updatedAt: string
@@ -25,7 +26,7 @@ export interface OrderDraftRow {
   delivery_date: string | null
   notes: string | null
   created_by: string
-  updated_by: string
+  updated_by: string | null
   created_at: string
   updated_at: string
   creator?: { name: string | null } | null

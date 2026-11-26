@@ -11,9 +11,11 @@
 // Pure: no React, no fetching.
 
 import type { Product, ProductUom } from '../../types'
-import type { DraftLine } from '../../supabase/functions/_shared/orderDraftPayload'
+import { MAX_LINE_QUANTITY, type DraftLine } from '../../supabase/functions/_shared/orderDraftPayload'
 
 export type { DraftLine } from '../../supabase/functions/_shared/orderDraftPayload'
+/** The most one line may ask for; the draft validator refuses more. */
+export { MAX_LINE_QUANTITY }
 
 /** The units a line may be ordered in, base first. Empty when the product
  *  carries no UOM rows (read before mig 00067); the line is then base-only. */
@@ -79,7 +81,8 @@ export function overStockByProduct(
   return over
 }
 
-export const isValidQuantity = (quantity: number) => Number.isInteger(quantity) && quantity >= 1
+export const isValidQuantity = (quantity: number) =>
+  Number.isInteger(quantity) && quantity >= 1 && quantity <= MAX_LINE_QUANTITY
 
 /** The `items` of a `place-order` request: each line in its own unit. */
 export function toPlaceOrderItems(lines: readonly DraftLine[]): Array<{ productId: number; quantity: number; uomId: number | null }> {

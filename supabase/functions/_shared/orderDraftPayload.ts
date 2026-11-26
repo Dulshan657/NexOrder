@@ -23,6 +23,12 @@ export interface OrderDraftUpsert {
   action: 'upsert'
   /** null creates a draft; a uuid updates that one. */
   id: string | null
+  /**
+   * The draft's `updated_at` as this client last saw it. An update applies only
+   * if the row still carries it, so two people editing one shared draft cannot
+   * silently overwrite each other. null = no precondition (a create).
+   */
+  expectedUpdatedAt: string | null
   hoReCaId: number | null
   lines: DraftLine[]
   /** `YYYY-MM-DD`, or null when no date has been agreed. */
@@ -50,10 +56,18 @@ export interface ParseResult<T> {
 
 export const MAX_DRAFT_LINES = 500
 export const MAX_DRAFT_NOTES = 2000
-const MAX_QUANTITY = 1_000_000
+export const MAX_LINE_QUANTITY = 1_000_000
+const MAX_QUANTITY = MAX_LINE_QUANTITY
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** `YYYY-MM-DD` that is also a real calendar day (no 2026-13-45, no 30 February). */
+export function isCalendarDate(v: string): boolean {
+  if (!ISO_DATE.test(v)) return false
+  const d = new Date(`${v}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -92,8 +106,13 @@ function parseUpsert(body: Record<string, unknown>): ParseResult<OrderDraftUpser
   }
 
   const deliveryDate = body.deliveryDate ?? null
-  if (deliveryDate !== null && (typeof deliveryDate !== 'string' || !ISO_DATE.test(deliveryDate))) {
-    return fail('deliveryDate must be YYYY-MM-DD or null')
+  if (deliveryDate !== null && (typeof deliveryDate !== 'string' || !isCalendarDate(deliveryDate))) {
+    return fail('deliveryDate must be a real date as YYYY-MM-DD, or null')
+  }
+
+  const expected = body.expectedUpdatedAt ?? null
+  if (expected !== null && (typeof expected !== 'string' || Number.isNaN(Date.parse(expected)))) {
+    return fail('expectedUpdatedAt must be a timestamp or null')
   }
 
   const notes = body.notes ?? null
@@ -107,6 +126,7 @@ function parseUpsert(body: Record<string, unknown>): ParseResult<OrderDraftUpser
     value: {
       action: 'upsert',
       id: id as string | null,
+      expectedUpdatedAt: expected as string | null,
       hoReCaId: hoReCaId as number | null,
       lines,
       deliveryDate: deliveryDate as string | null,

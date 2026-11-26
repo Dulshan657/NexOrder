@@ -4,7 +4,8 @@
 // Pure: orders in, answers out. Cancelled orders are not history — they are
 // what the customer did NOT end up taking.
 
-import type { Order } from '../../types'
+import { findUomById, findUomByFactor } from '../uom'
+import type { Order, OrderItem, Product } from '../../types'
 import type { DraftLine } from './orderLineModel'
 
 export const RECENT_ORDER_LIMIT = 10
@@ -18,14 +19,29 @@ export function customerOrders(orders: readonly Order[], hoReCaId: number, limit
     .slice(0, limit)
 }
 
-/** An order's lines in the units they were ordered in. */
-export function linesOfOrder(order: Order): DraftLine[] {
-  return order.items.map((item) => ({ productId: item.id, uomId: item.uomId ?? null, quantity: item.quantity }))
+/**
+ * One past line in the unit it was ordered in. The unit is the line's own
+ * `uomId` when the product still has it; otherwise it is found from the pack
+ * size (lines saved before `uom_id` existed carry only that). When neither
+ * resolves, the line comes back in BASE units — quantity × pack size — so a
+ * carton line is never silently copied as the same number of eaches.
+ */
+function lineOfItem(item: OrderItem, product: Product | undefined): DraftLine {
+  const pack = item.packSize ?? 1
+  const uom = findUomById(product?.uoms, item.uomId) ?? (pack > 1 ? findUomByFactor(product?.uoms, pack) : undefined)
+  if (uom) return { productId: item.id, uomId: uom.isBase ? null : uom.id, quantity: item.quantity }
+  return { productId: item.id, uomId: null, quantity: item.quantity * pack }
 }
 
-export function lastOrderLines(orders: readonly Order[], hoReCaId: number): DraftLine[] {
+/** An order's lines in the units they were ordered in. */
+export function linesOfOrder(order: Order, products: readonly Product[] = []): DraftLine[] {
+  const byId = new Map(products.map((p): [number, Product] => [p.id, p]))
+  return order.items.map((item) => lineOfItem(item, byId.get(item.id)))
+}
+
+export function lastOrderLines(orders: readonly Order[], hoReCaId: number, products: readonly Product[] = []): DraftLine[] {
   const [last] = customerOrders(orders, hoReCaId, 1)
-  return last ? linesOfOrder(last) : []
+  return last ? linesOfOrder(last, products) : []
 }
 
 export interface UsualProduct {

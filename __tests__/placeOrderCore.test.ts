@@ -20,6 +20,8 @@ interface Fixture {
   orderInsertError?: { message: string } | null
   itemsInsertError?: { message: string } | null
   invoiceInsertError?: { message: string } | null
+  /** Whether the named order_drafts row still exists (default true). */
+  draftExists?: boolean
 }
 
 interface Recorded {
@@ -49,6 +51,8 @@ function makeService(fx: Fixture) {
         return { data: fx.warehouses ?? [], error: null }
       case 'inventory_balances':
         return { data: fx.balances ?? [], error: null }
+      case 'order_drafts':
+        return { data: fx.draftExists === false ? null : { id: 'draft' }, error: null }
       default:
         throw new Error(`unexpected read of ${table}`)
     }
@@ -72,6 +76,7 @@ function makeService(fx: Fixture) {
           return chain
         },
         single: () => Promise.resolve(readResult(table)),
+        maybeSingle: () => Promise.resolve(readResult(table)),
         then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
           Promise.resolve(readResult(table, productIds)).then(resolve, reject),
         insert: (payload: unknown) => {
@@ -598,6 +603,14 @@ describe('placeOrderCore draftId', () => {
 
     expect(err.code).toBe('INSUFFICIENT_STOCK')
     expect(draftDeletes(writes)).toEqual([])
+  })
+
+  it('refuses a draft someone else has already placed, before writing anything', async () => {
+    const { service, writes } = makeService(baseFixture({ draftExists: false }))
+    const err = await thrownBy(() => placeOrderCore(service, input({ draftId: DRAFT })))
+
+    expect(err.code).toBe('CONFLICT')
+    expect(writes).toEqual([])
   })
 
   it('touches no draft when none is named, or on a dry run', async () => {

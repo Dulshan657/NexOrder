@@ -41,13 +41,16 @@ export function priceLines(
   promotions: Promotion[],
 ): LinePricing {
   const byId = new Map(products.map((p): [number, Product] => [p.id, p]))
+  // A cleared quantity box is NaN mid-edit; counting it as 0 keeps every
+  // promotion's minimum (and so every price) steady while the operator retypes.
+  const qty = (l: DraftLine) => (Number.isFinite(l.quantity) ? l.quantity : 0)
   const valueBefore = lines.reduce(
-    (sum, l) => sum + unitPrice(l, byId.get(l.productId), customer, user, []) * l.quantity,
+    (sum, l) => sum + unitPrice(l, byId.get(l.productId), customer, user, []) * qty(l),
     0,
   )
   const eligible = eligibleForOrderValue<Promotion>(promotions, valueBefore)
   const unitPrices = lines.map((l) => unitPrice(l, byId.get(l.productId), customer, user, eligible))
-  const total = lines.reduce((sum, l, i) => sum + unitPrices[i] * (Number.isFinite(l.quantity) ? l.quantity : 0), 0)
+  const total = lines.reduce((sum, l, i) => sum + unitPrices[i] * qty(l), 0)
   return { unitPrices, total: Math.round(total * 100) / 100 }
 }
 

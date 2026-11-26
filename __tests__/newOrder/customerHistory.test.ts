@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { customerOrders, lastOrderLines, linesOfOrder, usualProducts } from '../../lib/newOrder/customerHistory'
 import { mkHoReCa, mkProduct, mkUser } from '../fixtures'
-import type { Order, OrderItem, OrderStatus } from '../../types'
+import type { Order, OrderItem, OrderStatus, Product, ProductUom } from '../../types'
 
 const item = (id: number, quantity: number, over: Partial<OrderItem> = {}): OrderItem => ({
   ...mkProduct({ id, sku: `P-${id}`, name: `Product ${id}` }),
@@ -30,9 +30,17 @@ const orders: Order[] = [
   order(99, '2026-11-26T09:00:00Z', [item(5, 1)]),
 ]
 
+const uom = (over: Partial<ProductUom>): ProductUom => ({
+  id: 31, productId: 3, code: 'each', factorToBase: 1, isBase: true, price: 1,
+  isOrderable: true, isReceivable: true, sortOrder: 0, ...over,
+})
+const CARTON_OF_12 = uom({ id: 12, code: 'carton', factorToBase: 12, isBase: false, sortOrder: 1 })
+// Product 3 is sold in eaches and in cartons of 12.
+const catalogue: Product[] = [1, 2].map((id) => mkProduct({ id })).concat(mkProduct({ id: 3, uoms: [uom({}), CARTON_OF_12] }))
+
 describe('customerHistory', () => {
   it('returns the most recent order\'s lines as the last order', () => {
-    expect(lastOrderLines(orders, 10)).toEqual([
+    expect(lastOrderLines(orders, 10, catalogue)).toEqual([
       { productId: 1, uomId: null, quantity: 4 },
       { productId: 3, uomId: 12, quantity: 1 },
     ])
@@ -60,9 +68,23 @@ describe('customerHistory', () => {
   })
 
   it('copies an order\'s lines in the units they were ordered in', () => {
-    expect(linesOfOrder(orders[1])).toEqual([
+    expect(linesOfOrder(orders[1], catalogue)).toEqual([
       { productId: 1, uomId: null, quantity: 4 },
       { productId: 3, uomId: 12, quantity: 1 },
+    ])
+  })
+
+  it("finds a carton line's unit from its pack size when the line carries no uomId", () => {
+    const legacy = order(10, '2026-11-21T00:00:00Z', [item(3, 2, { packSize: 12 })])
+    expect(linesOfOrder(legacy, catalogue)).toEqual([{ productId: 3, uomId: 12, quantity: 2 }])
+  })
+
+  it('copies an unresolvable pack line as base units, never as the same count of eaches', () => {
+    const legacy = order(10, '2026-11-21T00:00:00Z', [item(3, 2, { packSize: 24 })])
+    expect(linesOfOrder(legacy, catalogue)).toEqual([{ productId: 3, uomId: null, quantity: 48 }])
+    // Product unknown to the catalogue: same rule.
+    expect(linesOfOrder(order(10, '2026-11-21T00:00:00Z', [item(9, 3, { uomId: 12, packSize: 12 })]))).toEqual([
+      { productId: 9, uomId: null, quantity: 36 },
     ])
   })
 

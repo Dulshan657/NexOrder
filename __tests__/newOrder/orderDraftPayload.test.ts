@@ -25,6 +25,7 @@ describe('orderDraftPayload', () => {
       value: {
         action: 'upsert',
         id: null,
+        expectedUpdatedAt: null,
         hoReCaId: 10,
         lines: [{ productId: 1, uomId: null, quantity: 2 }],
         deliveryDate: '2026-12-01',
@@ -48,6 +49,18 @@ describe('orderDraftPayload', () => {
     expect(parseOrderDraftRequest(upsert({ notes: 'x'.repeat(2001) })).ok).toBe(false)
     const many = Array.from({ length: 501 }, (_, i) => ({ productId: i + 1, quantity: 1 }))
     expect(parseOrderDraftRequest(upsert({ lines: many })).ok).toBe(false)
+  })
+
+  it('rejects a date that is not on the calendar', () => {
+    expect(parseOrderDraftRequest(upsert({ deliveryDate: '2026-13-45' })).ok).toBe(false)
+    expect(parseOrderDraftRequest(upsert({ deliveryDate: '2026-02-30' })).ok).toBe(false)
+    expect(parseOrderDraftRequest(upsert({ deliveryDate: '2028-02-29' })).ok).toBe(true)
+  })
+
+  it('carries the updated_at an update was based on, and refuses a non-timestamp', () => {
+    const at = '2026-11-26T02:00:00.123456+00:00'
+    expect(parseOrderDraftRequest(upsert({ expectedUpdatedAt: at })).value).toMatchObject({ expectedUpdatedAt: at })
+    expect(parseOrderDraftRequest(upsert({ expectedUpdatedAt: 'yesterday' })).ok).toBe(false)
   })
 
   it('requires a uuid to update or delete', () => {

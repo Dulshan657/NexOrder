@@ -2,7 +2,7 @@
 // (RLS: Admin/Manager); writes go through `mutate-order-draft`.
 
 import { supabase } from '@/lib/supabase'
-import { extractFunctionErrorMessage } from '@/lib/functionError'
+import { extractFunctionErrorEnvelope, extractFunctionErrorMessage } from '@/lib/functionError'
 import { toOrderDraft, type OrderDraft, type OrderDraftRow } from '@/lib/newOrder/orderDraft'
 import type { DraftLine } from '@/lib/newOrder/orderLineModel'
 
@@ -26,19 +26,42 @@ export async function listOrderDrafts(): Promise<OrderDraft[]> {
 export interface SaveOrderDraftInput {
   /** null creates a draft. */
   id: string | null
+  /** The draft's `updated_at` as last seen; an update applies only if it still matches. */
+  expectedUpdatedAt: string | null
   hoReCaId: number | null
   lines: DraftLine[]
   deliveryDate: string | null
   notes: string | null
 }
 
-export async function saveOrderDraft(input: SaveOrderDraftInput): Promise<{ id: string }> {
-  const { data, error } = await supabase.functions.invoke<{ ok: true; draft: { id: string } }>('mutate-order-draft', {
-    body: { action: 'upsert', ...input },
-  })
-  if (error) throw new Error(await extractFunctionErrorMessage(error, 'The draft could not be saved'))
-  if (!data?.draft?.id) throw new Error('Saving the draft returned no draft')
-  return { id: data.draft.id }
+/** A failed save, carrying the server's code so the caller can branch on it:
+ *  `NOT_FOUND` (placed or deleted meanwhile) and `CONFLICT` (edited by someone
+ *  else) are both recoverable by saving as a new draft. */
+export class DraftSaveError extends Error {
+  readonly code: string | null
+  constructor(message: string, code: string | null) {
+    super(message)
+    this.name = 'DraftSaveError'
+    this.code = code
+  }
+}
+
+export interface SavedDraft {
+  id: string
+  updatedAt: string
+}
+
+export async function saveOrderDraft(input: SaveOrderDraftInput): Promise<SavedDraft> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; draft: { id: string; updated_at: string } }>(
+    'mutate-order-draft',
+    { body: { action: 'upsert', ...input } },
+  )
+  if (error) {
+    const envelope = await extractFunctionErrorEnvelope(error)
+    throw new DraftSaveError(await extractFunctionErrorMessage(error, 'The draft could not be saved'), envelope?.code ?? null)
+  }
+  if (!data?.draft?.id) throw new DraftSaveError('Saving the draft returned no draft', null)
+  return { id: data.draft.id, updatedAt: data.draft.updated_at }
 }
 
 export async function deleteOrderDraft(id: string): Promise<void> {

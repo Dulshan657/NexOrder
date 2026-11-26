@@ -39,6 +39,7 @@ import { useDeleteOrderDraft, useOrderDrafts } from '../../hooks/queries/useOrde
 import { isValidQuantity, overStockByProduct, toPlaceOrderItems, type DraftLine } from '../../lib/newOrder/orderLineModel'
 import { priceLines } from '../../lib/newOrder/previewPricing'
 import type { OrderDraft } from '../../lib/newOrder/orderDraft'
+import { MAX_DRAFT_NOTES } from '../../supabase/functions/_shared/orderDraftPayload'
 import type { HoReCa, Order, Product, Promotion, User } from '../../types'
 
 interface NewOrderViewProps {
@@ -75,9 +76,9 @@ export default function NewOrderView({
   addToast,
   onViewInOrderImport,
 }: NewOrderViewProps) {
-  const order = useNewOrderState()
+  const order = useNewOrderState({ onNotice: (message) => addToast?.(message, 'info') })
   const placeOrder = usePlaceOrder()
-  const { data: drafts = [] } = useOrderDrafts()
+  const { data: drafts = [], refetch: refetchDrafts } = useOrderDrafts()
   const deleteDraft = useDeleteOrderDraft()
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -85,6 +86,8 @@ export default function NewOrderView({
   const [draftsOpen, setDraftsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  // A draft waiting to be opened over an order whose last edit could not be saved.
+  const [pendingOpen, setPendingOpen] = useState<OrderDraft | null>(null)
 
   const quickAddRef = useRef<HTMLInputElement | null>(null)
   const qtyInputs = useRef(new Map<string, HTMLInputElement>())
@@ -121,10 +124,23 @@ export default function NewOrderView({
     setFocusKey(lineKey(line))
   }
 
-  const openDraft = (draft: OrderDraft) => {
+  const showDraft = (draft: OrderDraft) => {
     order.loadDraft(draft)
     setSubmitError(null)
+    setPendingOpen(null)
     setDraftsOpen(false)
+  }
+
+  // Save what is on screen first; only an edit that could not be saved needs asking about.
+  const openDraft = async (draft: OrderDraft) => {
+    const { saved } = await order.flush()
+    if (saved) showDraft(draft)
+    else setPendingOpen(draft)
+  }
+
+  const openDraftsList = () => {
+    setDraftsOpen(true)
+    void refetchDrafts()
   }
 
   const removeDraft = async (draft: OrderDraft) => {
@@ -148,12 +164,16 @@ export default function NewOrderView({
     if (blockedReason !== null || order.hoReCaId === null || placeOrder.isPending) return
     setSubmitError(null)
     try {
+      // Save any pending edit first, so the draft this order is spending is known
+      // — otherwise a first save still in flight would survive as a copy of a
+      // placed order in everyone's Drafts list.
+      const { draftId } = await order.flush()
       const result = await placeOrder.mutateAsync({
         hoReCaId: order.hoReCaId,
         items: toPlaceOrderItems(order.lines),
         notes: order.notes.trim() === '' ? null : order.notes.trim(),
         deliveryDate: order.deliveryDate === '' ? null : order.deliveryDate,
-        draftId: order.draftId,
+        draftId,
       })
       addToast?.(`Order placed for ${customer?.name ?? 'customer'}.`, 'success')
       order.reset()
@@ -198,7 +218,7 @@ export default function NewOrderView({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <SaveStatusBadge status={order.saveStatus} error={order.saveError} />
-            <Button type="button" variant="secondary" size="sm" onClick={() => setDraftsOpen(true)}>
+            <Button type="button" variant="secondary" size="sm" onClick={openDraftsList}>
               <FileText className="w-4 h-4 mr-1.5" aria-hidden="true" /> Drafts ({drafts.length})
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => setPasteOpen(true)}>
@@ -233,6 +253,7 @@ export default function NewOrderView({
                 <Textarea
                   value={order.notes}
                   rows={2}
+                  maxLength={MAX_DRAFT_NOTES}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => order.setNotes(e.target.value)}
                   placeholder="Delivery instructions, purchase order reference, anything the picker needs."
                 />
@@ -332,6 +353,16 @@ export default function NewOrderView({
         currentDraftId={order.draftId}
         onOpen={openDraft}
         onDelete={removeDraft}
+      />
+
+      <ConfirmDialog
+        open={pendingOpen !== null}
+        title="Discard unsaved changes?"
+        message={`The order on screen has changes that could not be saved${order.saveError ? ` (${order.saveError})` : ''}. Opening another draft discards them.`}
+        confirmLabel="Discard and open"
+        tone="danger"
+        onConfirm={() => pendingOpen && showDraft(pendingOpen)}
+        onCancel={() => setPendingOpen(null)}
       />
 
       <ConfirmDialog

@@ -489,6 +489,20 @@ export async function placeOrderCore(
 
   // ── from here on this writes; the dry run has returned ────────────────────
 
+  // A draft that has gone was placed (or deleted) by someone else, most likely
+  // from their own stale Drafts list. Refuse rather than place it twice.
+  if (input.draftId) {
+    const { data: draft, error: draftReadError } = await service
+      .from('order_drafts')
+      .select('id')
+      .eq('id', input.draftId)
+      .maybeSingle()
+    if (draftReadError) throw new EdgeFunctionError('INTERNAL', draftReadError.message)
+    if (!draft) {
+      throw new EdgeFunctionError('CONFLICT', 'This draft has already been placed or deleted by someone else')
+    }
+  }
+
   // A free product need not be in the cart, and its value is recorded on the order.
   const freeProductIds = [...new Set(bogoFreeItems.map((b) => b.productId))].filter((id) => !productMap.has(id))
   const freeProducts = freeProductIds.length > 0 ? await loadProducts(service, freeProductIds) : new Map<number, PricedProduct>()

@@ -14,7 +14,7 @@ import React from 'react'
 import { AlertTriangle, Trash2 } from 'lucide-react'
 
 import { NumberInput, Select } from '../../ui'
-import { orderableUoms, type DraftLine, type StockShortfall } from '../../../lib/newOrder/orderLineModel'
+import { MAX_LINE_QUANTITY, orderableUoms, type DraftLine, type StockShortfall } from '../../../lib/newOrder/orderLineModel'
 import { money, priceLines } from '../../../lib/newOrder/previewPricing'
 import type { HoReCa, Product, Promotion, User } from '../../../types'
 
@@ -78,7 +78,9 @@ export default function OrderLinesGrid({
             const shortfall = overStock.get(line.productId)
             const badQty = !Number.isInteger(line.quantity) || line.quantity < 1
             return (
-              <li key={lineKey(line)} className={`${ROW} px-4 py-3 ${shortfall ? 'bg-red-50/60' : ''}`}>
+              // Keyed by product and position, NOT unit: changing a line's unit must not
+              // remount the row and throw keyboard focus out of the select.
+              <li key={`${line.productId}:${index}`} className={`${ROW} px-4 py-3 ${shortfall ? 'bg-red-50/60' : ''}`}>
                 <div className="min-w-0 col-span-2 sm:col-span-1">
                   <p className="font-medium text-stone-900 truncate">{name}</p>
                   <p className="font-mono text-xs text-stone-600">
@@ -120,6 +122,7 @@ export default function OrderLinesGrid({
                     ref={(el: HTMLInputElement | null) => registerQuantityInput?.(lineKey(line), el)}
                     value={Number.isFinite(line.quantity) ? line.quantity : ''}
                     min={1}
+                    max={MAX_LINE_QUANTITY}
                     step={1}
                     dense
                     invalid={badQty || !!shortfall}

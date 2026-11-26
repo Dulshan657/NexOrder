@@ -1,14 +1,29 @@
 // The New Order screen's state: the order being keyed, and its draft.
 //
-// Every edit marks the order dirty; a debounced effect then saves it through
+// Every edit marks the order dirty; a debounced save then writes it through
 // `mutate-order-draft`. The first save creates the draft and every later one
-// updates it, so one order is one draft however long it takes to key. A save
-// already in flight is never overlapped — the next one waits for it — because
-// two concurrent first saves would create two drafts of the same order.
+// updates it, so one order is one draft however long it takes to key.
+//
+// The rules that keep a shared, auto-saved draft honest (NX-0048 review):
+//   * ONE save at a time. A save that comes due while another is in flight
+//     waits for it and then re-checks; two concurrent first saves would create
+//     two drafts of one order.
+//   * ONE timer, owned by a ref and cleared on every re-arm and on unmount, so
+//     no orphaned retry can save an order that has since been cleared or placed.
+//   * A GENERATION per order on screen (bumped by open, clear, place). A save
+//     that finishes for an earlier generation writes nothing back — and if it
+//     CREATED a draft, that draft is deleted, or it would sit in the shared list
+//     holding an order that was already placed.
+//   * A draft that has GONE (placed or deleted by someone else) or CHANGED
+//     (edited by someone else) is never retried into a loop: the order on screen
+//     is saved as a new draft, so neither person's work is lost.
+//   * `flush()` saves now. The screen awaits it before placing (so the draft id
+//     is known) and before opening another draft, and fires it on unmount.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { useSaveOrderDraft } from '../../../hooks/queries/useOrderDrafts'
+import { useDeleteOrderDraft, useSaveOrderDraft } from '../../../hooks/queries/useOrderDrafts'
+import { DraftSaveError } from '../../../services/supabase/orderDraftService'
 import { mergeLines, sameLine, type DraftLine } from '../../../lib/newOrder/orderLineModel'
 import { isDraftWorthSaving, type OrderDraft } from '../../../lib/newOrder/orderDraft'
 
@@ -23,25 +38,117 @@ export interface OrderFields {
   notes: string
 }
 
-const EMPTY: OrderFields = { hoReCaId: null, lines: [], deliveryDate: '', notes: '' }
+interface DraftRef {
+  id: string | null
+  updatedAt: string | null
+}
 
-export function useNewOrderState() {
+const EMPTY: OrderFields = { hoReCaId: null, lines: [], deliveryDate: '', notes: '' }
+const NO_DRAFT: DraftRef = { id: null, updatedAt: null }
+
+/** Codes after which the order on screen is saved as a NEW draft instead. */
+const FORK_CODES = new Set(['NOT_FOUND', 'CONFLICT'])
+
+const toPayloadLines = (lines: DraftLine[]) =>
+  // A cleared quantity box is mid-edit; the draft keeps it as 0.
+  lines.map((l) => ({ ...l, quantity: Number.isInteger(l.quantity) && l.quantity > 0 ? l.quantity : 0 }))
+
+export interface NewOrderStateOptions {
+  /** Something the operator should know that is not an error (a fork). */
+  onNotice?: (message: string) => void
+}
+
+export function useNewOrderState({ onNotice }: NewOrderStateOptions = {}) {
   const [fields, setFields] = useState<OrderFields>(EMPTY)
-  const [draftId, setDraftId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<DraftRef>(NO_DRAFT)
   const [dirty, setDirty] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const save = useSaveOrderDraft()
-  const inFlight = useRef(false)
-  // Bumped on every edit, so a save that finishes after a newer edit leaves the order dirty.
+  const { mutateAsync: saveDraft } = useSaveOrderDraft()
+  const { mutateAsync: deleteDraft } = useDeleteOrderDraft()
+
+  // Refs mirror what an async save must read at the moment it runs.
+  const latest = useRef({ fields, draft, dirty })
+  latest.current = { fields, draft, dirty }
   const editSeq = useRef(0)
-  // Bumped when a different order is put on screen (opened, cleared, placed);
-  // a save that started on the previous one must not write its id onto this one.
   const generation = useRef(0)
-  // The latest values, read when the debounce fires rather than captured when it was set.
-  const latest = useRef({ fields, draftId })
-  latest.current = { fields, draftId }
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inFlight = useRef<Promise<void> | null>(null)
+  const noticeRef = useRef(onNotice)
+  noticeRef.current = onNotice
+
+  const clearTimer = () => {
+    if (timer.current !== null) clearTimeout(timer.current)
+    timer.current = null
+  }
+
+  /** Save the order on screen now, if it needs it. Resolves when it is done. */
+  const saveNow = useCallback(async (): Promise<void> => {
+    clearTimer()
+    while (inFlight.current) await inFlight.current
+    const { fields: f, draft: d, dirty: isDirty } = latest.current
+    if (!isDirty || (!isDraftWorthSaving(f) && d.id === null)) return
+
+    const gen = generation.current
+    const seq = editSeq.current
+    const attempt = (target: DraftRef) =>
+      saveDraft({
+        id: target.id,
+        expectedUpdatedAt: target.updatedAt,
+        hoReCaId: f.hoReCaId,
+        lines: toPayloadLines(f.lines),
+        deliveryDate: f.deliveryDate === '' ? null : f.deliveryDate,
+        notes: f.notes.trim() === '' ? null : f.notes,
+      })
+
+    const run = (async () => {
+      setSaveStatus('saving')
+      try {
+        let saved
+        try {
+          saved = await attempt(d)
+        } catch (error: unknown) {
+          if (!(error instanceof DraftSaveError) || !FORK_CODES.has(error.code ?? '') || d.id === null) throw error
+          saved = await attempt(NO_DRAFT)
+          if (generation.current === gen) {
+            noticeRef.current?.(
+              error.code === 'CONFLICT'
+                ? 'Someone else changed that draft, so your version was saved as a new draft.'
+                : 'That draft was placed or deleted elsewhere, so this order was saved as a new draft.',
+            )
+          }
+        }
+        if (generation.current !== gen) {
+          // The order this save belonged to is no longer on screen. A draft it
+          // created would be an orphan holding work that was placed or cleared.
+          if (saved.id !== d.id) await deleteDraft(saved.id).catch(() => undefined)
+          return
+        }
+        const nextDraft = { id: saved.id, updatedAt: saved.updatedAt }
+        setDraft(nextDraft)
+        setSaveError(null)
+        const unchanged = editSeq.current === seq
+        latest.current = { ...latest.current, draft: nextDraft, dirty: unchanged ? false : latest.current.dirty }
+        if (unchanged) {
+          setDirty(false)
+          setSaveStatus('saved')
+        } else {
+          setSaveStatus('pending')
+        }
+      } catch (error: unknown) {
+        if (generation.current !== gen) return
+        setSaveStatus('error')
+        setSaveError(error instanceof Error ? error.message : 'The draft could not be saved')
+      }
+    })()
+    inFlight.current = run
+    try {
+      await run
+    } finally {
+      if (inFlight.current === run) inFlight.current = null
+    }
+  }, [saveDraft, deleteDraft])
 
   const edit = useCallback((update: (f: OrderFields) => OrderFields) => {
     editSeq.current += 1
@@ -74,75 +181,65 @@ export function useNewOrderState() {
     [edit],
   )
 
-  const loadDraft = useCallback((draft: OrderDraft) => {
+  const putOnScreen = useCallback((next: OrderFields, nextDraft: DraftRef, status: SaveStatus) => {
     generation.current += 1
-    setFields({
-      hoReCaId: draft.hoReCaId,
-      lines: draft.lines.map((l) => ({ ...l })),
-      deliveryDate: draft.deliveryDate ?? '',
-      notes: draft.notes ?? '',
-    })
-    setDraftId(draft.id)
+    clearTimer()
+    setFields(next)
+    setDraft(nextDraft)
     setDirty(false)
-    setSaveStatus('saved')
+    latest.current = { fields: next, draft: nextDraft, dirty: false }
+    setSaveStatus(status)
     setSaveError(null)
   }, [])
 
-  const reset = useCallback(() => {
-    generation.current += 1
-    setFields(EMPTY)
-    setDraftId(null)
-    setDirty(false)
-    setSaveStatus('idle')
-    setSaveError(null)
-  }, [])
+  const loadDraft = useCallback(
+    (d: OrderDraft) =>
+      putOnScreen(
+        { hoReCaId: d.hoReCaId, lines: d.lines.map((l) => ({ ...l })), deliveryDate: d.deliveryDate ?? '', notes: d.notes ?? '' },
+        { id: d.id, updatedAt: d.updatedAt },
+        'saved',
+      ),
+    [putOnScreen],
+  )
 
-  const { mutateAsync } = save
+  const reset = useCallback(() => putOnScreen(EMPTY, NO_DRAFT, 'idle'), [putOnScreen])
 
+  /** Save any pending edit now. `saved` is false when an edit is still unsaved
+   *  (the save failed), which is the caller's cue to ask before discarding it. */
+  const flush = useCallback(async (): Promise<{ draftId: string | null; saved: boolean }> => {
+    await saveNow()
+    const { draft: d, dirty: stillDirty, fields: f } = latest.current
+    return { draftId: d.id, saved: !stillDirty || (!isDraftWorthSaving(f) && d.id === null) }
+  }, [saveNow])
+
+  // The debounce.
   useEffect(() => {
     if (!dirty) return undefined
-    if (!isDraftWorthSaving(fields) && latest.current.draftId === null) return undefined
-    setSaveStatus('pending')
-    const timer = setTimeout(async function run() {
-      if (inFlight.current) {
-        setTimeout(run, AUTOSAVE_DELAY_MS)
-        return
-      }
-      inFlight.current = true
-      setSaveStatus('saving')
-      const { fields: f, draftId: id } = latest.current
-      const seq = editSeq.current
-      const gen = generation.current
-      try {
-        const saved = await mutateAsync({
-          id,
-          hoReCaId: f.hoReCaId,
-          // A cleared quantity box is mid-edit; the draft keeps it as 0.
-          lines: f.lines.map((l) => ({ ...l, quantity: Number.isInteger(l.quantity) && l.quantity > 0 ? l.quantity : 0 })),
-          deliveryDate: f.deliveryDate === '' ? null : f.deliveryDate,
-          notes: f.notes.trim() === '' ? null : f.notes,
-        })
-        if (generation.current !== gen) return
-        setDraftId((current) => current ?? saved.id)
-        if (editSeq.current === seq) {
-          setDirty(false)
-          setSaveStatus('saved')
-        }
-        setSaveError(null)
-      } catch (error: unknown) {
-        if (generation.current !== gen) return
-        setSaveStatus('error')
-        setSaveError(error instanceof Error ? error.message : 'The draft could not be saved')
-      } finally {
-        inFlight.current = false
-      }
+    if (!isDraftWorthSaving(fields) && latest.current.draft.id === null) return undefined
+    setSaveStatus((s) => (s === 'saving' ? s : 'pending'))
+    clearTimer()
+    timer.current = setTimeout(() => {
+      timer.current = null
+      void saveNow()
     }, AUTOSAVE_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [dirty, fields, mutateAsync])
+    return clearTimer
+  }, [dirty, fields, saveNow])
+
+  // Leaving the screen saves what is pending rather than dropping it.
+  const saveNowRef = useRef(saveNow)
+  saveNowRef.current = saveNow
+  useEffect(
+    () => () => {
+      clearTimer()
+      void saveNowRef.current()
+    },
+    [],
+  )
 
   return {
     ...fields,
-    draftId,
+    draftId: draft.id,
+    dirty,
     saveStatus,
     saveError,
     setCustomer,
@@ -154,5 +251,6 @@ export function useNewOrderState() {
     setUnit,
     loadDraft,
     reset,
+    flush,
   }
 }

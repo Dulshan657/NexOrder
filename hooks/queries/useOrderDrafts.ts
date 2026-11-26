@@ -18,11 +18,15 @@ export function useOrderDrafts() {
   return useQuery({ queryKey: orderDraftKeys.all, queryFn: listOrderDrafts, staleTime: DRAFTS_STALE_MS })
 }
 
+/** Auto-save fires every few seconds while an order is keyed, so only a
+ *  CREATE refreshes the shared list; the list is refetched when it is opened. */
 export function useSaveOrderDraft() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: SaveOrderDraftInput) => saveOrderDraft(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: orderDraftKeys.all }),
+    onSuccess: (_saved, input) => {
+      if (input.id === null) qc.invalidateQueries({ queryKey: orderDraftKeys.all })
+    },
   })
 }
 

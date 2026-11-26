@@ -39,7 +39,7 @@ export default function CustomerHistoryPanel({ orders, hoReCaId, products, onAdd
   }
 
   const copy = (order: Order) => {
-    const lines = linesOfOrder(order)
+    const lines = linesOfOrder(order, products)
     const usable = lines.filter((l) => byId.has(l.productId))
     onAddLines(usable, lines.length - usable.length)
   }

@@ -7,6 +7,7 @@ import { AUTOSAVE_DELAY_MS } from '../../components/admin/newOrder/useNewOrderSt
 import { mkHoReCa, mkProduct, mkUser } from '../fixtures'
 import { UserRole, type Product, type ProductUom } from '../../types'
 import type { OrderDraft } from '../../lib/newOrder/orderDraft'
+import { DraftSaveError } from '../../services/supabase/orderDraftService'
 
 const mocks = vi.hoisted(() => ({
   placeOrder: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock('../../hooks/queries/useOrders', () => ({
 }))
 
 vi.mock('../../hooks/queries/useOrderDrafts', () => ({
-  useOrderDrafts: () => ({ data: mocks.drafts, isLoading: false, error: null }),
+  useOrderDrafts: () => ({ data: mocks.drafts, isLoading: false, error: null, refetch: vi.fn() }),
   useSaveOrderDraft: () => ({ mutateAsync: mocks.saveDraft, isPending: false }),
   useDeleteOrderDraft: () => ({ mutateAsync: mocks.deleteDraft, isPending: false }),
 }))
@@ -45,7 +46,7 @@ const coconut = (available: number): Product =>
 const customer = mkHoReCa({ id: 10, name: 'Test Restaurant' })
 const admin = mkUser({ id: 1, role: UserRole.ADMIN })
 
-const renderView = (products: Product[]) =>
+const renderView = (products: Product[], addToast = vi.fn()) =>
   render(
     <NewOrderView
       products={products}
@@ -53,7 +54,7 @@ const renderView = (products: Product[]) =>
       orders={[]}
       currentUser={admin}
       promotions={[]}
-      addToast={vi.fn()}
+      addToast={addToast}
       onViewInOrderImport={vi.fn()}
     />,
   )
@@ -70,11 +71,26 @@ const addBySku = (sku: string) => {
   fireEvent.keyDown(quickAdd(), { key: 'Enter' })
 }
 
+const DRAFT_ID = '3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b'
+const draftFixture = (): OrderDraft => ({
+  id: DRAFT_ID,
+  hoReCaId: 10,
+  lines: [{ productId: 1, uomId: null, quantity: 4 }],
+  deliveryDate: '2026-12-01',
+  notes: 'Back door',
+  createdBy: 'u-1',
+  createdByName: 'Ann',
+  updatedBy: 'u-1',
+  updatedByName: 'Ann',
+  createdAt: '2026-11-26T01:00:00Z',
+  updatedAt: '2026-11-26T02:00:00Z',
+})
+
 const placeButtons = () => screen.getAllByRole('button', { name: /place order/i })
 
 beforeEach(() => {
   mocks.placeOrder.mockReset().mockResolvedValue({ orderId: 'ORD-1', total: 0, cartDiscount: 0, appliedPromotionIds: [], bogoFreeItems: [] })
-  mocks.saveDraft.mockReset().mockResolvedValue({ id: '3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b' })
+  mocks.saveDraft.mockReset().mockResolvedValue({ id: DRAFT_ID, updatedAt: '2026-11-26T03:00:00Z' })
   mocks.deleteDraft.mockReset().mockResolvedValue(undefined)
   mocks.drafts = []
 })
@@ -160,7 +176,7 @@ describe('NewOrderView', () => {
     }
   })
 
-  it('opening a draft restores customer, lines, date and notes', () => {
+  it('opening a draft restores customer, lines, date and notes', async () => {
     const draft: OrderDraft = {
       id: '3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b',
       hoReCaId: 10,
@@ -182,9 +198,72 @@ describe('NewOrderView', () => {
     expect(within(dialog).getByText('Test Restaurant')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: /open/i }))
 
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('button', { name: /test restaurant/i })).toBeTruthy()
     expect((screen.getByRole('spinbutton', { name: 'Quantity for Coconut Milk' }) as HTMLInputElement).value).toBe('4')
     expect((screen.getByLabelText('Delivery date') as HTMLInputElement).value).toBe('2026-12-01')
     expect((screen.getByLabelText('Notes') as HTMLInputElement).value).toBe('Back door')
+  })
+  it('placing before the first auto-save spends the draft that save creates', async () => {
+    renderView([coconut(100)])
+    chooseCustomer()
+    addBySku('CM-1')
+    fireEvent.click(placeButtons()[0])
+
+    await waitFor(() => expect(mocks.placeOrder).toHaveBeenCalledTimes(1))
+    expect(mocks.saveDraft).toHaveBeenCalledTimes(1)
+    expect(mocks.placeOrder.mock.calls[0][0]).toMatchObject({ draftId: DRAFT_ID })
+  })
+
+  it('a first save that lands after the order was cleared deletes the draft it created', async () => {
+    let finish: (v: unknown) => void = () => undefined
+    mocks.saveDraft.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    vi.useFakeTimers()
+    try {
+      renderView([coconut(100)])
+      addBySku('CM-1')
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS) })
+      expect(mocks.saveDraft).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+      await act(async () => { finish({ id: 'orphan-id', updatedAt: 't1' }) })
+      expect(mocks.deleteDraft).toHaveBeenCalledWith('orphan-id')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('saves as a new draft when the one on screen was placed elsewhere', async () => {
+    mocks.drafts = [draftFixture()]
+    const toast = vi.fn()
+    renderView([coconut(100)], toast)
+    fireEvent.click(screen.getByRole('button', { name: /drafts \(1\)/i }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /open/i }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    mocks.saveDraft
+      .mockRejectedValueOnce(new DraftSaveError('Draft not found', 'NOT_FOUND'))
+      .mockResolvedValueOnce({ id: 'new-id', updatedAt: 't2' })
+    vi.useFakeTimers()
+    try {
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Quantity for Coconut Milk' }), { target: { value: '6' } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS) })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(mocks.saveDraft.mock.calls.map((c) => c[0].id)).toEqual([DRAFT_ID, null])
+    expect(mocks.saveDraft.mock.calls[0][0].expectedUpdatedAt).toBe('2026-11-26T02:00:00Z')
+    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/saved as a new draft/), 'info')
+  })
+
+  it("changing a line's unit keeps focus on the unit select", () => {
+    renderView([coconut(100)])
+    addBySku('CM-1')
+    const select = screen.getByRole('combobox', { name: 'Unit for Coconut Milk' })
+    select.focus()
+    fireEvent.change(select, { target: { value: String(CARTON_ID) } })
+
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Unit for Coconut Milk' }))
+    expect(document.activeElement).toBe(select)
   })
 })

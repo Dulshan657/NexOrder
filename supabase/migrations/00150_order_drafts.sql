@@ -30,7 +30,9 @@ CREATE TABLE public.order_drafts (
     delivery_date date,
     notes         text CHECK (notes IS NULL OR char_length(notes) <= 2000),
     created_by    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    updated_by    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    -- SET NULL, not CASCADE: deleting a colleague's login must not delete a
+    -- draft someone else created merely because they were the last to touch it.
+    updated_by    uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now()
 );

@@ -69,6 +69,12 @@ serve(async (req: Request) => {
       return json({ ok: true, deletedId: input.id })
     }
 
+    // A stale customer id would otherwise surface as a raw foreign-key error.
+    if (input.hoReCaId !== null) {
+      const { data: horeca } = await admin.from('horecas').select('id').eq('id', input.hoReCaId).maybeSingle()
+      if (!horeca) throw new EdgeFunctionError('INVALID_INPUT', `Customer ${input.hoReCaId} does not exist`)
+    }
+
     const fields = {
       horeca_id: input.hoReCaId,
       lines: input.lines,
@@ -98,14 +104,19 @@ serve(async (req: Request) => {
       return json({ ok: true, draft: created }, 201)
     }
 
-    const { data: updated, error } = await admin
-      .from('order_drafts')
-      .update(fields)
-      .eq('id', input.id)
-      .select(DRAFT_COLUMNS)
-      .maybeSingle()
+    // Optimistic concurrency: the update applies only to the version this
+    // client last saw. Drafts are shared, and a blind full replace would let two
+    // operators overwrite each other's lines every few seconds without either
+    // knowing.
+    let update = admin.from('order_drafts').update(fields).eq('id', input.id)
+    if (input.expectedUpdatedAt !== null) update = update.eq('updated_at', input.expectedUpdatedAt)
+    const { data: updated, error } = await update.select(DRAFT_COLUMNS).maybeSingle()
     if (error) throw new EdgeFunctionError('INTERNAL', error.message)
-    if (!updated) throw new EdgeFunctionError('NOT_FOUND', 'Draft not found — it may already have been placed or deleted')
+    if (!updated) {
+      const { data: still } = await admin.from('order_drafts').select('id').eq('id', input.id).maybeSingle()
+      if (still) throw new EdgeFunctionError('CONFLICT', 'Someone else has changed this draft since you opened it')
+      throw new EdgeFunctionError('NOT_FOUND', 'Draft not found — it may already have been placed or deleted')
+    }
     return json({ ok: true, draft: updated })
   } catch (e) {
     if (isEdgeFunctionError(e)) return e.toResponse(req)
