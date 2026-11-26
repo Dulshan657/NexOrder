@@ -1,7 +1,7 @@
 // mutate-order-draft Edge Function
 //
 // Admin/Manager save and delete of a New Order draft (`order_drafts`, mig
-// 00148). The table is written by nothing else except `place-order`, which
+// 00150). The table is written by nothing else except `place-order`, which
 // deletes a draft once the order it became commits.
 //
 // Drafts are shared, so an upsert of another person's draft is allowed and

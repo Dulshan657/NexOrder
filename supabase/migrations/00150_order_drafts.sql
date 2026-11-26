@@ -1,6 +1,6 @@
 -- =============================================================================
 -- New Order drafts (NX-0048)
--- Migration: 00148_order_drafts.sql
+-- Migration: 00150_order_drafts.sql
 -- =============================================================================
 -- An order being keyed on the New Order screen is saved as it is typed, so a
 -- phone call that is interrupted, a device that is switched or a colleague who

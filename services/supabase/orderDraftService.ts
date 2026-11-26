@@ -1,4 +1,4 @@
-// New Order drafts (`order_drafts`, mig 00148). Reads go straight to PostgREST
+// New Order drafts (`order_drafts`, mig 00150). Reads go straight to PostgREST
 // (RLS: Admin/Manager); writes go through `mutate-order-draft`.
 
 import { supabase } from '@/lib/supabase'
