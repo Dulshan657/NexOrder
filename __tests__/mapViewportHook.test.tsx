@@ -181,4 +181,90 @@ describe('useMapViewport', () => {
     advance(500)
     expect(tx()).toBe(rested)
   })
+
+  /** A fast drag released: the map is left gliding. */
+  function throwPan(hook: () => UseMapViewportResult, tick: (ms: number) => void) {
+    act(() => hook().handlers.onPointerDown(pointer('pointerdown', 100, 100)))
+    for (let i = 1; i <= 5; i++) {
+      tick(16)
+      act(() => hook().handlers.onPointerMove(pointer('pointermove', 100 + i * 20, 100)))
+    }
+    act(() => hook().handlers.onPointerUp(pointer('pointerup', 200, 100)))
+  }
+
+  // A tap that halts a coasting map is a STOP, not a click: on the handheld it
+  // would otherwise select whatever bin happened to slide under the finger.
+  it('a press that stops a glide does not count as a click', () => {
+    const { advance, tick } = motionClock()
+    let hook: UseMapViewportResult | null = null
+    render(<Harness objects={[]} onHook={(vp) => { hook = vp }} />)
+    throwPan(() => hook!, tick)
+    advance(48)
+    act(() => hook!.handlers.onPointerDown(pointer('pointerdown', 300, 300)))
+    act(() => hook!.handlers.onPointerUp(pointer('pointerup', 300, 300)))
+    expect(hook!.didDrag()).toBe(true)
+    // The glide is over: the map stays where the tap stopped it.
+    const stopped = tx()
+    advance(300)
+    expect(tx()).toBe(stopped)
+
+    // A tap on a map at rest is still a click.
+    act(() => hook!.handlers.onPointerDown(pointer('pointerdown', 300, 300)))
+    act(() => hook!.handlers.onPointerUp(pointer('pointerup', 300, 300)))
+    expect(hook!.didDrag()).toBe(false)
+  })
+
+  it('jumps instead of moving when the operator prefers reduced motion', () => {
+    const { advance, tick } = motionClock()
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {},
+    }))
+    let hook: UseMapViewportResult | null = null
+    render(<Harness objects={[]} onHook={(vp) => { hook = vp }} />)
+    const fitted = scale()
+    fireEvent.click(screen.getByText('in'))
+    expect(scale()).toBeGreaterThan(fitted)
+    fireEvent.click(screen.getByText('fit'))
+    expect(scale()).toBe(fitted)
+
+    // ...and a thrown pan stops where the hand let go.
+    throwPan(() => hook!, tick)
+    const released = tx()
+    advance(300)
+    expect(tx()).toBe(released)
+  })
+
+  // The finger left over from a pinch pans, but has no honest throw velocity.
+  it('the finger left after a pinch does not glide', () => {
+    const { advance, tick } = motionClock()
+    let hook: UseMapViewportResult | null = null
+    render(<Harness objects={[]} onHook={(vp) => { hook = vp }} />)
+    const touch = (type: string, id: number, x: number, y: number) =>
+      ({ type, pointerId: id, pointerType: 'touch', button: 0, clientX: x, clientY: y, currentTarget: captureTarget }) as never
+    act(() => {
+      hook!.track(touch('pointerdown', 1, 100, 100))
+      hook!.handlers.onPointerDown(touch('pointerdown', 1, 100, 100))
+      hook!.track(touch('pointerdown', 2, 200, 100))
+      hook!.startPinch(touch('pointerdown', 2, 200, 100))
+    })
+    // Lift finger 2: finger 1 becomes the survivor pan.
+    act(() => {
+      hook!.track(touch('pointerup', 2, 200, 100))
+      hook!.handlers.onPointerUp(touch('pointerup', 2, 200, 100))
+    })
+    for (let i = 1; i <= 5; i++) {
+      tick(16)
+      act(() => {
+        hook!.track(touch('pointermove', 1, 100 + i * 20, 100))
+        hook!.handlers.onPointerMove(touch('pointermove', 1, 100 + i * 20, 100))
+      })
+    }
+    act(() => {
+      hook!.track(touch('pointerup', 1, 200, 100))
+      hook!.handlers.onPointerUp(touch('pointerup', 1, 200, 100))
+    })
+    const released = tx()
+    advance(300)
+    expect(tx()).toBe(released)
+  })
 })

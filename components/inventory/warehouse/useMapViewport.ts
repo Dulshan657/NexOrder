@@ -463,7 +463,10 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
 
   const onPointerDown = useCallback((e: PointerEvent<HTMLElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
-    // A press stops the map dead, wherever it was going.
+    // A press stops the map dead, wherever it was going. A press that STOPPED a
+    // moving map is that and nothing more: counted as a drag, so it cannot also
+    // select whichever bin happened to slide under the finger.
+    const stoppedMotion = motionRef.current != null
     stopMotion()
     panStateRef.current = {
       pointerId: e.pointerId,
@@ -475,7 +478,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       samples: [{ t: performance.now(), x: e.clientX, y: e.clientY }],
       fromPinch: false,
     }
-    movedRef.current = false
+    movedRef.current = stoppedMotion
     setIsPanning(true)
   }, [stopMotion])
 
