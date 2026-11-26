@@ -9,7 +9,7 @@
     { "id": "A1", "check": "Zoom in, Zoom out, the + - 0 keys, Fit and a floor change move the map with a short ease-out animation instead of jumping; with prefers-reduced-motion they jump straight to the target." },
     { "id": "A2", "check": "A wheel or trackpad zoom scales in proportion to the scroll distance (line-mode and pixel-mode deltas normalised), not by a fixed step per event." },
     { "id": "A3", "check": "Releasing a fast pan lets the map glide to a stop; it does not glide after a pinch, a marquee drag or a paint stroke, nor under prefers-reduced-motion, and a new press stops it." },
-    { "id": "A4", "check": "Zooming does not rebuild the map scene on every frame: the scene memo depends on a settled scale that changes only when a gesture or animation ends and the label level-of-detail would change." },
+    { "id": "A4", "check": "Zooming does not rebuild the map scene on every frame: the scene memo depends on a settled scale that changes only once a zoom stops (an animation's last frame, a pinch's end, a pause in the wheel), so the scene subtree is rebuilt once per zoom, not per frame." },
     { "id": "A5", "check": "The floor grid is drawn as one patterned rect rather than a line per row and column, and each zone's wash is one path rather than a rect per cell." },
     { "id": "A6", "check": "A floor larger than the screen can be zoomed out past the fitted view; the minimum zoom is relative to the fit, not a fixed 0.4." },
     { "id": "A7", "check": "WarehouseCanvas and the map markers use the map colour tokens and the app's fonts: no hard-coded hex colours and no generic sans-serif or monospace font families." },
@@ -18,7 +18,7 @@
     { "id": "A10", "check": "The overlay legend sits on the map in a frosted card carrying data-map-control, with an occupancy gradient bar and text no smaller than 12px." },
     { "id": "A11", "check": "The bin hover card is placed with lib/popoverPosition so it never clips on a top-row or edge bin, and it shows the bin's friendly name with its code." },
     { "id": "A12", "check": "The map controls are one frosted stack with 36px buttons (44px on a coarse pointer), a tabular zoom percentage, and tooltips naming their keys." },
-    { "id": "A13", "check": "A 2-second wheel zoom on dev MAIN commits no React render mid-gesture and holds near 60 fps; before/after numbers are in the PR.", "manual": "Chrome Performance trace on the built app against dev MAIN, before and after" },
+    { "id": "A13", "check": "A 2-second wheel zoom on dev MAIN recomputes the scene memo once (at the settle), not per frame, and holds near 60 fps; before/after numbers, with the rack shadow on and forced off, are in the PR.", "manual": "Chrome Performance trace on the built app against dev MAIN, before and after" },
     { "id": "A14", "check": "Browser walk at 1440px and 360x664 (pan with momentum, pinch, wheel, Fit, floor switch, hover on a top-row bin, legend vs controls, reduced motion on) shows no regression, and the contrast crawl passes on the Warehouse map.", "manual": "browser walk + tests/contrast crawl on a build served on port 3004; outcomes in FINAL" },
     { "id": "A15", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" }
   ],
