@@ -522,7 +522,8 @@ export function MapStage({
       />
       {/* Same scale bar the designer draws, off the same maths — the ops map and
           the plan it was drawn from must agree about how long 5 m is. */}
-      <div className="map-panel-pill pointer-events-none absolute bottom-3 right-3 z-20 px-3 py-1.5">
+      {/* Hidden on a narrow map, where the control row owns the bottom edge. */}
+      <div className="map-panel-pill pointer-events-none absolute bottom-3 right-3 z-20 hidden px-3 py-1.5 sm:block">
         <ScaleIndicator pxPerCell={BASE_CELL * viewport.scale} cellSizeM={layout.cellSizeM} />
       </div>
       {/* The live count, on the map rather than only in the panel — during a sweep

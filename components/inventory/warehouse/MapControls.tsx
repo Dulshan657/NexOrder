@@ -39,7 +39,9 @@ const FLOOR_BUTTON_CLASS =
   `grid ${BUTTON_SIZE_CLASS} shrink-0 place-items-center rounded-lg text-sm font-semibold tabular-nums ` +
   `transition-colors btn-press ${FOCUS_CLASS}`
 
-const DIVIDER_CLASS = 'mx-auto my-0.5 h-px w-5 bg-stone-200'
+// A row on a narrow map, a column from sm up: on the 328 px handheld map a column
+// of 44 px buttons covered a third of the floor (NX-0047 browser walk).
+const DIVIDER_CLASS = 'mx-0.5 h-5 w-px bg-stone-200 sm:mx-auto sm:my-0.5 sm:h-px sm:w-5'
 
 function floorLabel(names: MapControlsProps['floorNames'], index: number): string {
   const name = names?.[index]?.trim()
@@ -54,14 +56,14 @@ export function MapControls({
     // press on the floor (mapGesture rule 0). Without it Annotate paints under them.
     <div
       data-map-control
-      className="map-panel absolute bottom-14 right-3 z-20 flex flex-col items-center p-1"
+      className="map-panel absolute bottom-3 right-3 z-20 flex flex-row items-center p-1 sm:bottom-14 sm:flex-col"
     >
       {floorCount > 1 && (
         <>
-          <div role="group" aria-label="Floor" className="flex flex-col items-center">
+          <div role="group" aria-label="Floor" className="flex flex-row items-center sm:flex-col">
             {/* The caption and the number read together as "Floor 2"; the button's
                 own name says it in full, and so does its hint. */}
-            <span className="px-1 pb-0.5 pt-1 text-xs font-medium text-stone-600" aria-hidden="true">Floor</span>
+            <span className="hidden px-1 pb-0.5 pt-1 text-xs font-medium text-stone-600 sm:block" aria-hidden="true">Floor</span>
             {Array.from({ length: floorCount }, (_, f) => {
               const label = floorLabel(floorNames, f)
               return (
@@ -95,7 +97,7 @@ export function MapControls({
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
       </HoverHint>
-      <span className="w-full select-none py-0.5 text-center font-mono text-xs tabular-nums text-stone-600">
+      <span className="hidden w-full select-none py-0.5 text-center font-mono text-xs tabular-nums text-stone-600 sm:block">
         {Math.round(scale * 100)}%
       </span>
       <HoverHint text="Zoom out (−)" side="left">
