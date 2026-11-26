@@ -564,3 +564,49 @@ describe('placeOrderCore', () => {
     })
   })
 })
+
+describe('placeOrderCore draftId', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')))
+    vi.stubEnv('SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'service-key')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  const DRAFT = '3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b'
+  const draftDeletes = (writes: Recorded[]) => writes.filter((w) => w.kind === 'delete' && w.target === 'order_drafts')
+
+  it('deletes the named draft after the order commits', async () => {
+    const { service, writes } = makeService(baseFixture())
+    await placeOrderCore(service, input({ draftId: DRAFT }))
+
+    expect(draftDeletes(writes)).toEqual([{ kind: 'delete', target: 'order_drafts', payload: DRAFT }])
+    // After the reservation, never before it: a draft is only spent once the order is real.
+    const reserveAt = writes.findIndex((w) => w.kind === 'rpc' && w.target === 'inv_reserve_order')
+    expect(writes.findIndex((w) => w.target === 'order_drafts')).toBeGreaterThan(reserveAt)
+  })
+
+  it('keeps the draft when the order fails', async () => {
+    const { service, writes } = makeService(baseFixture({ reserveError: { message: 'INSUFFICIENT_STOCK' } }))
+    const err = await thrownBy(() => placeOrderCore(service, input({ draftId: DRAFT })))
+
+    expect(err.code).toBe('INSUFFICIENT_STOCK')
+    expect(draftDeletes(writes)).toEqual([])
+  })
+
+  it('touches no draft when none is named, or on a dry run', async () => {
+    const live = makeService(baseFixture())
+    await placeOrderCore(live.service, input())
+    expect(draftDeletes(live.writes)).toEqual([])
+
+    const dry = makeService(baseFixture())
+    await placeOrderCore(dry.service, input({ draftId: DRAFT }), { dryRun: true })
+    expect(draftDeletes(dry.writes)).toEqual([])
+  })
+})
