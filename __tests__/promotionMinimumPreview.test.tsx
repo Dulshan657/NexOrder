@@ -8,7 +8,7 @@ import PromotionsBanner from '../components/PromotionsBanner'
 import ReorderTab from '../components/ReorderTab'
 import { buildReorderPlan } from '../lib/kitchen/reorderPlan'
 import { mkCartItem, mkHoReCa, mkPercentPromo, mkProduct, mkUser } from './fixtures'
-import type { ParsedOrderLine } from '../lib/newOrder/resolveOrderLines'
+import type { DraftLine } from '../lib/newOrder/orderLineModel'
 
 vi.mock('../hooks/queries/useSettings', () => ({ useSettings: () => ({ data: { low_stock_threshold: 10 } }) }))
 
@@ -19,7 +19,7 @@ const promo = mkPercentPromo({ id: 'MIN', percentOff: 50, minOrderValue: 200 })
 
 describe('New Order preview', () => {
   const grid = (quantity: number) => {
-    const lines = [{ productId: 1, name: product.name, sku: product.sku, quantity }] as unknown as ParsedOrderLine[]
+    const lines: DraftLine[] = [{ productId: 1, uomId: null, quantity }]
     render(
       <OrderLinesGrid
         lines={lines}
@@ -29,10 +29,9 @@ describe('New Order preview', () => {
         promotions={[promo]}
         onChangeQuantity={vi.fn()}
         onRemove={vi.fn()}
-        onAddProduct={vi.fn()}
       />,
     )
-    return screen.getByText('Estimated total').closest('tr')?.textContent
+    return screen.getByText('Estimated total').closest('[data-total-row]')?.textContent
   }
 
   it('a promotion below its minimum gives no discount until the lines reach it', () => {

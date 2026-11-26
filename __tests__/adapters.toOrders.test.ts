@@ -54,6 +54,15 @@ describe('toOrders', () => {
         expect(unknown.items[0].name).toBe('P404')
     })
 
+    it('keeps the unit a line was ordered in', () => {
+        const row = orderRow('o1', 1, [10]) as unknown as { order_items: Array<Record<string, unknown>> }
+        row.order_items[0].pack_size = 12
+        row.order_items[0].uom_id = 77
+        const [order] = toOrders([row as never], hoReCas, users, products)
+        expect(order.items[0].packSize).toBe(12)
+        expect(order.items[0].uomId).toBe(77)
+    })
+
     it('does not scan the product list once per line', () => {
         let reads = 0
         const counted = new Proxy(products as unknown as object[], {

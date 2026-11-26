@@ -132,4 +132,7 @@ export const LOCKED_TABLES = [
   // created with REVOKE ALL from PUBLIC/anon/authenticated and no policies. Readable
   // only in the database until the office screen arrives with its own brief.
   { table: 'pick_differences', fn: 'record-short-pick / record-pick', migration: '00140' },
+  // New Order drafts (00150). Admin/Manager SELECT only; written by
+  // mutate-order-draft and deleted by place-order once the order commits.
+  { table: 'order_drafts', fn: 'mutate-order-draft / place-order', migration: '00150' },
 ]

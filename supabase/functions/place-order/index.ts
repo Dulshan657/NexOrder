@@ -28,6 +28,17 @@ interface PlaceOrderRequest {
   deliveryTimeSlot?: 'AM' | 'PM' | null
   verification?: Record<string, unknown> | null
   orderIdPrefix?: string
+  /** The New Order draft this was keyed from; deleted once the order commits. */
+  draftId?: string | null
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Drafts belong to the New Order screen, which only Admin and Manager reach;
+ *  nobody else may spend one, or a customer could delete office work by id. */
+function draftIdFor(role: string, raw: unknown): string | null {
+  if (role !== 'Admin' && role !== 'Manager') return null
+  return typeof raw === 'string' && UUID.test(raw) ? raw : null
 }
 
 // jsonResponse / errorResponse are defined inside `serve` so they close over
@@ -126,6 +137,7 @@ serve(async (req: Request) => {
       deliveryDate: body.deliveryDate,
       deliveryTimeSlot: body.deliveryTimeSlot,
       verification: body.verification,
+      draftId: draftIdFor(profile.role, body.draftId),
     })
     return jsonResponse(result, 201)
   } catch (err) {

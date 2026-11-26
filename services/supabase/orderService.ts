@@ -99,6 +99,8 @@ export interface PlaceOrderInput {
   deliveryDate?: string | null
   deliveryTimeSlot?: 'AM' | 'PM' | null
   verification?: Record<string, unknown> | null
+  /** New Order: the draft this order was keyed from, deleted once it commits. */
+  draftId?: string | null
 }
 
 export interface PlaceOrderResult {

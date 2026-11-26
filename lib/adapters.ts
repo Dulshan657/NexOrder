@@ -459,6 +459,9 @@ function orderFromRow(row: OrderRowWithEmbeds, { hoReCaById, userById, productBy
       }),
       quantity: oi.quantity,
       packSize: oi.pack_size ?? undefined,
+      // The unit it was ordered in (mig 00067). Without it a copied order cannot
+      // tell 3 cartons from 3 eaches (NX-0048 review).
+      uomId: (oi as { uom_id?: number | null }).uom_id ?? undefined,
       price: Number(oi.unit_price),
     } as OrderItem
   })

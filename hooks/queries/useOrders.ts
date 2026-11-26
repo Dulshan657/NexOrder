@@ -9,6 +9,7 @@ import {
   cancelOrder,
   getPickedUnits,
 } from '@/services/supabase/orderService'
+import { orderDraftKeys } from './useOrderDrafts'
 import type { OrderFilters, PlaceOrderInput, PlaceOrderResult } from '@/services/supabase/orderService'
 import type { OrderStatus } from '@/types'
 import { productKeys } from './useProducts'
@@ -54,6 +55,8 @@ export function usePlaceOrder() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: orderKeys.all })
       qc.invalidateQueries({ queryKey: productKeys.all })
+      // place-order spends the New Order draft it was given.
+      qc.invalidateQueries({ queryKey: orderDraftKeys.all })
     },
   })
 }

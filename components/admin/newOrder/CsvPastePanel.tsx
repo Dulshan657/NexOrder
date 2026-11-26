@@ -6,7 +6,7 @@
 // this panel previews IS what gets added.
 
 import React, { useMemo, useState } from 'react'
-import { ClipboardPaste, AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle, Check } from 'lucide-react'
 
 import { Button, Textarea } from '../../ui'
 import { resolveOrderLines } from '../../../lib/newOrder/resolveOrderLines'
@@ -15,7 +15,8 @@ import type { Product } from '../../../types'
 
 interface CsvPastePanelProps {
   products: Product[]
-  onAdd: (lines: ParsedOrderLine[]) => void
+  /** `remaining` = rows that could not be used and stay in the box. */
+  onAdd: (lines: ParsedOrderLine[], remaining: number) => void
 }
 
 const CsvPastePanel: React.FC<CsvPastePanelProps> = ({ products, onAdd }) => {
@@ -30,16 +31,12 @@ const CsvPastePanel: React.FC<CsvPastePanelProps> = ({ products, onAdd }) => {
   // Keep exactly the rows that could not be used, so "fix the rest" means
   // editing what is still on screen rather than finding it again in an email.
   const add = () => {
-    onAdd(result.lines)
+    onAdd(result.lines, result.issues.length)
     setText(result.issues.map((i) => i.raw).join('\n'))
   }
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-stone-50/60 p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <ClipboardPaste className="w-4 h-4 text-stone-500" />
-        <h3 className="text-sm font-semibold text-stone-800">Paste lines</h3>
-      </div>
+    <div>
       <p className="text-xs text-stone-500 mb-3">
         One row per line, product code then quantity. Commas or tabs both work, so a
         block copied straight out of a spreadsheet pastes as-is. A header row is ignored.

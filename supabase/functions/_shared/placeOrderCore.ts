@@ -93,6 +93,12 @@ export interface PlaceOrderCoreInput {
   deliveryTimeSlot?: 'AM' | 'PM' | null
   /** The captured signature / verification payload, stored as-is on the order. */
   verification?: Record<string, unknown> | null
+  /**
+   * An `order_drafts` row this order was keyed from (New Order). Deleted once
+   * the order is real — after the reservation succeeds — and never on a dry
+   * run or a failure, so a refused order leaves the operator's work in place.
+   */
+  draftId?: string | null
 }
 
 export interface PlaceOrderCoreOptions {
@@ -483,6 +489,20 @@ export async function placeOrderCore(
 
   // ── from here on this writes; the dry run has returned ────────────────────
 
+  // A draft that has gone was placed (or deleted) by someone else, most likely
+  // from their own stale Drafts list. Refuse rather than place it twice.
+  if (input.draftId) {
+    const { data: draft, error: draftReadError } = await service
+      .from('order_drafts')
+      .select('id')
+      .eq('id', input.draftId)
+      .maybeSingle()
+    if (draftReadError) throw new EdgeFunctionError('INTERNAL', draftReadError.message)
+    if (!draft) {
+      throw new EdgeFunctionError('CONFLICT', 'This draft has already been placed or deleted by someone else')
+    }
+  }
+
   // A free product need not be in the cart, and its value is recorded on the order.
   const freeProductIds = [...new Set(bogoFreeItems.map((b) => b.productId))].filter((id) => !productMap.has(id))
   const freeProducts = freeProductIds.length > 0 ? await loadProducts(service, freeProductIds) : new Map<number, PricedProduct>()
@@ -580,6 +600,13 @@ export async function placeOrderCore(
   if (invoiceError) {
     // Order is already placed; surface invoice failure but don't roll back
     console.warn('Invoice creation failed, order placed without invoice:', invoiceError.message)
+  }
+
+  if (input.draftId) {
+    // The order stands whether or not this succeeds; a draft left behind is
+    // an annoyance on the Drafts list, not a reason to fail a placed order.
+    const { error: draftError } = await service.from('order_drafts').delete().eq('id', input.draftId)
+    if (draftError) console.warn('Order placed but its draft was not deleted:', draftError.message)
   }
 
   dispatchConfirmationEmail(orderId)
