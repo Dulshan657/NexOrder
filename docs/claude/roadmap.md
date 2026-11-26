@@ -46,8 +46,8 @@ Ordered by impact; one-line scope each so future agents don't drift.
 
 NX-0046 fixed the correctness faults. These were found by the same audit and deliberately not done. The plan that follows NX-0046 is, in order: one search box for product / bin / batch / pallet in 2D and 3D; the manager's live map (per-pallet contents, open tasks and movement history on a bin; a Work overlay of live putaway, replenishment, pick and off-home tasks; a capacity table per zone and rack); 3D racks and pallets that look real, derived with no new data entry; a picking mini-map on the RS35.
 
-- **Speed, unmeasured.** Any stock change in any warehouse rebuilds `locationsById` and with it the whole scene. Painting and pinch-zoom rebuild the scene per cell and per frame (`scale` is a scene-memo dependency). Zone washes draw one rectangle per cell. `selectFromMap` in `RackedWorkspace.tsx` gets a new identity every render. The scene memo in `WarehouseCanvas.tsx` omits `onRenameArea`, `onEditSign` and `signRegions`. Measure on a large site before fixing any of it.
-- **A grid 200 cells wide cannot be zoomed out far enough to see whole** (`MIN_SCALE` 0.4 x `BASE_CELL` 26).
+- **Speed, partly addressed by NX-0047.** A zoom now rebuilds the scene once, at the settle, and zone washes are one path per zone. Still open from the audit: any stock change in any warehouse rebuilds `locationsById` and with it the whole scene. Painting and pinch-zoom rebuild the scene per cell and per frame (`scale` is a scene-memo dependency). Zone washes draw one rectangle per cell. `selectFromMap` in `RackedWorkspace.tsx` gets a new identity every render. The scene memo in `WarehouseCanvas.tsx` omits `onRenameArea`, `onEditSign` and `signRegions`. Measure on a large site before fixing any of it.
+- ~~**A grid 200 cells wide cannot be zoomed out far enough to see whole**~~. Fixed by NX-0047: the fit clamps to `FLOOR_MIN_SCALE` (0.05) and the zoom range follows the fit (`scaleLimitsForFit`).
 - **Keyboard and screen readers.** Bins are not focusable in 2D or 3D. Overlay and floor buttons have no `aria-pressed`, tree rows no `aria-expanded`. 3D labels are hidden from screen readers and its help text is mouse-only. No Ctrl+Z while painting areas.
 - **Files over the 800-line limit:** `mutate-warehouse-location/index.ts` (1988), `mutate-layout/index.ts` (1535), `RackedWorkspace.tsx` (1367+), `useLayoutEditorState.ts` (1189), `LayoutDesignerView.tsx` (1004), `WarehouseCanvas.tsx` (1000+), `_shared/wie/codePattern.ts` (898).
 - **3D Aisle preset ignores what is around it.** With nothing selected it stands at the scene centre, which on the demo site is inside the bulk pallet grid with a post in the middle of the view. Seen in a browser 2026-11-24. Belongs with the rack-facing work in the realistic-3D piece.
@@ -56,6 +56,26 @@ NX-0046 fixed the correctness faults. These were found by the same audit and del
 - **Not a fault after all:** "narrow areas cannot be renamed". `regionLabelBudget` gives every area at least six cells of label width. And the hand-built grid geometry in `three/SceneObjects.tsx` cannot leak in practice: it is rebuilt only when the grid size changes, and `WarehousePage` remounts the workspace per layout.
 - **Other gaps:** a layout or location change made by another user is not pushed to the map (only `inventory_balances` is subscribed); the live map imports from the designer module (`WarehouseCanvas.tsx` imports `LayoutCanvas`); there is no deep link to a bin, floor or overlay; the "no three.js in a tenant build" check is manual.
 - **Dev serves an unmerged build.** On 2026-11-24 `nexorder.vercel.app/version.json` was `79edf70`, the NX-0041 dev-merge, not `main`. Check before any `deploy:dev`.
+
+## Warehouse 2D map: known issues after NX-0047 (2026-11-26)
+
+NX-0047 made the 2D map animate, glide, zoom without rebuilding the scene, and gave it a new look. These are what it left open or found, with the evidence in the brief's FINAL (`docs/briefs/NX-0047-warehouse-map-premium.md`).
+
+- **Zoom is paint-bound, not 60 fps.** A 2 s ctrl+wheel zoom on the Amadiya demo site ran at 15 to 38 fps on a 7.7 GB dev box (the base ran 29 to 33 fps). React does no scene work mid-zoom now; the browser repaints the whole SVG every frame. The per-rack sheen is the largest single cost (about 5 fps); the rack shadow and the frosted panels' backdrop blur cost little. **Fix:** during a gesture, move a cached GPU layer (a CSS transform on a `will-change` element, with an overscan margin so a pan shows no blank edge) and redraw the SVG only at the settle. Until then, consider dropping the sheen while `svg[data-moving]`, as the shadow already is.
+- **Node count doubled** (312 to 625 on the Amadiya demo site): one sheen rect per rack plus the selection rings. Feeds the paint cost above.
+- **Text is soft mid-zoom.** Counter-scaled labels and grid hairlines are drawn at the settled scale, so they grow or shrink with the map until the zoom stops, then snap crisp. Intended, but visible on a long zoom.
+- **Not checked in a browser:**
+  - the shadow returning at the settle, frame by frame, for a visible pop;
+  - the hover card on a real top-row or edge bin (only unit-tested);
+  - a pinch zoom and a thrown pan on a real touch device, the RS35 above all;
+  - the contrast crawl (`tests/contrast/`, needs real staff credentials) with the new occupancy ramp, the muted label ink (now stone-700) and the blue hover ring.
+- **Narrow maps:** below `sm` the controls are one row on the bottom edge and the zoom percentage and scale bar are hidden. A layout with several floors adds a button per floor to that row and will crowd a 328 px map; nothing wraps it yet.
+- **Legend content is noisy.** It lists every storage form, level role, area and zone present, with duplicates in name ("Staging Area" twice on the demo). It collapses, but it starts open on desktop and runs to 13 rows there.
+- **Over-capacity looks the same as full** on the occupancy ramp: a darker stop could not hold the label ink at 4.5:1. The number on the bin says "over".
+- **Floor buttons show a digit.** `MapControls` takes `floorNames`, but layouts carry no floor names (`warehouse_layouts` has only `floor_count`), so nothing supplies them.
+- **A button zoom that is still animating swallows a click on a bin**, the same as a tap that stops a glide. Deliberate (a press stops a moving map), but a quick zoom-then-tap on desktop will need a second tap.
+- **Out of scope, still to do:** minimap, fullscreen, find-stock dimming and fly-to in 2D, keyboard navigation between bins.
+- **`recode-gestures.spec.ts` cannot run locally** without `E2E_ADMIN_*`; the NX-0046 map spec signs in through the demo roster and can.
 
 ## Recently shipped
 
