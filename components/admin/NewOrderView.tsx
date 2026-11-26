@@ -230,7 +230,10 @@ export default function NewOrderView({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-4">
-          <section aria-label="Customer and delivery" className="glass-panel rounded-xl p-4 sm:p-5">
+          {/* relative z-20: glass-panel's backdrop blur makes this section a stacking
+              context, so without a z-index the customer dropdown opens UNDER the
+              quick-add bar and lines that follow it. */}
+          <section aria-label="Customer and delivery" className="glass-panel relative z-20 rounded-xl p-4 sm:p-5">
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
               <Field label="Customer">
                 <HoReCaSearchDropdown
@@ -290,7 +293,9 @@ export default function NewOrderView({
             </p>
           )}
 
-          <div className="flex justify-end pb-2">
+          {/* Below lg the Nex Assistant button floats over the bottom-right corner,
+              right above the bottom bar; the extra padding lets Clear scroll clear of it. */}
+          <div className="flex justify-end pb-28 lg:pb-2">
             <Button
               type="button"
               variant="ghost"
