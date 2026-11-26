@@ -89,3 +89,29 @@ The visual half is drafted by a Fable 5.2 subagent and reviewed here before it i
 - The 3D view.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `interpolateViewport > interpolates zoom in log space and eases out` and `useMapViewport > Fit animates to the fitted view instead of jumping` fail on base, pass on tip (check:brief). Reduced motion: `useMapViewport > jumps instead of moving when the operator prefers reduced motion`. Browser, 360x664 (Playwright `reducedMotion`): Zoom in leaves the transform unchanged immediately after the click and reaches scale 0.203 by 400 ms; with `reduce` it is at 0.203 immediately | |
+| A2 | claimed | `useMapViewport > a wheel zoom scales with the scroll distance` fails on base, passes on tip | |
+| A3 | claimed | `useMapViewport > a released fast pan keeps gliding` fails on base, passes on tip; `> the finger left after a pinch does not glide`; `> jumps instead of moving when the operator prefers reduced motion` (thrown pan); `> a press that stops a glide does not count as a click` (a fault found in review, fixed in 8408729) | A marquee or paint stroke never reaches the pan handlers (MapStage returns before them), so it cannot glide; pointercancel never glides by code, not by test |
+| A4 | claimed | `WarehouseCanvas zooms without rebuilding its scene > the scene memo depends on the settled scale, not the live one` fails on base, passes on tip. Browser, 2 s ctrl+wheel zoom on the Amadiya demo site, MutationObserver on the map's svg: base 060edeb rewrote 10,489 and 14,696 scene nodes during the gesture (two runs); tip rewrote 0, then 626 once at the settle, with the transform updated every frame (68 of 69 frames) | |
+| A5 | claimed | `WarehouseCanvas zooms without rebuilding its scene > draws the grid as one pattern and each zone wash as one path` fails on base, passes on tip | `WarehouseCanvas — zones > tints and names the zone derived from its bins` now finds the wash as a `path`, not a `rect` |
+| A6 | claimed | `clampViewport > lets a floor larger than the screen zoom out past its fit` fails on base, passes on tip. Browser, 360x664, Warehouse login on MAIN: fitted at scale 0.169, whole floor visible; under the base's 0.4 floor it could not be | `fitToBounds > clamps scale for a very large bounds` re-pinned from MIN_SCALE to FLOOR_MIN_SCALE: that clamp is the behaviour A6 changes |
+| A7 | claimed | `warehouse map polish > the canvas and markers use tokens and the app fonts` fails on base, passes on tip; built CSS carries every `--color-map-*`; browser at 1440px shows the tokens rendering inside the SVG | |
+| A8 | claimed | `WarehouseCanvas — depth > racks share one shadow filter on the group and a selected bin has two rings` fails on base, passes on tip; screenshot at 1440px shows the shadow and sheen | The shadow is dropped while the map moves (`svg[data-moving]`) |
+| A9 | claimed | `occupancyColor > every stop keeps the label ink at 4.5:1` fails on base, passes on tip (ink 8.6-15.3:1, muted ink 5.0-9.0:1 across the stops) | Computed from the ramp's own hex values, which are sRGB literals; the OKLCH caveat applies to Tailwind palette classes, not these |
+| A10 | claimed | `warehouse map polish > the legend sits on the map as a map control` fails on base, passes on tip; browser at 1440px and 360px | |
+| A11 | claimed | `warehouse map polish > the hover card is placed by popoverPosition and shows the friendly name` fails on base, passes on tip; `__tests__/warehouse/binHoverCard.test.tsx` covers six placements including a top-row and an edge cell | Not hovered on a top-row bin in a real browser |
+| A12 | claimed | `warehouse map polish > the controls are touch-sized with key-hint tooltips` fails on base, passes on tip; browser, 360x664 with a touch context: Zoom in is 44 px, no two map controls overlap | The 360px walk found the vertical stack covering a third of the 328x246 map; below `sm` it is now one row (2a54ffa) |
+| A13 | not-claimed | 2 s ctrl+wheel zoom, desktop Chrome on this machine: tip 15-38 fps across runs, worst frame 50-167 ms; base 29-33 fps, worst frame 117-300 ms. Hiding the per-rack sheen gained about 5 fps; dropping the shadow and the backdrop blur gained little | Scene work during a zoom is gone (A4), but the frame rate is bound by painting the SVG, and the numbers are noisy on a 7.7 GB machine running two preview servers. "Near 60 fps" is not met. The real fix is compositing the map as a GPU layer during a gesture, which is a follow-up |
+| A14 | not-claimed | Browser walk done at 1440px (Admin, Amadiya) and 360x664 (Warehouse, MAIN, motion and reduced motion). `tests/e2e/warehouse-map-fixes.spec.ts`: 5 passed on a build of 2a54ffa served on 3004 | The contrast crawl (`tests/contrast/`) was not run: it needs real staff credentials this machine does not have. `tests/e2e/recode-gestures.spec.ts`: 6 failed for want of `E2E_ADMIN_*`, before any assertion |
+| A15 | not-claimed | | Not merged. Waits on #62, then on the owner's call about what dev is serving (an unpushed local merge carrying NX-0040 to NX-0043) |
+
+### Not claimed
+
+- 60 fps zoom (A13): the map is paint-bound; see A13.
+- The contrast crawl behind the login, with the new ramp, muted ink (stone-700) and hover ring (A14).
+- A pinch zoom on a real touch device; pinch is covered by the existing unit tests and by `applyPinch` limits only.
+- The shadow returning at the settle was not checked frame by frame for a visible pop.
+- This brief's `base` is NX-0046's tip: PR #62 must merge with a merge commit, or `base` stops being an ancestor of `main`.
