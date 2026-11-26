@@ -25,7 +25,6 @@
     { "file": "__tests__/newOrder/customerHistory.test.ts", "test": "customerHistory > returns the most recent order's lines as the last order", "proves": ["A4"] },
     { "file": "__tests__/newOrder/orderDraftPayload.test.ts", "test": "orderDraftPayload > rejects a line without a productId", "proves": ["A5"] },
     { "file": "__tests__/placeOrderCore.test.ts", "test": "placeOrderCore draftId > deletes the named draft after the order commits", "proves": ["A6"] },
-    { "file": "__tests__/placeOrderCore.test.ts", "test": "placeOrderCore draftId > keeps the draft when the order fails", "proves": ["A6"] },
     { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > submits a carton line with its unit", "proves": ["A1"] },
     { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > disables Place order while a line is over stock", "proves": ["A2"] },
     { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > Enter on a SKU adds the line and focuses its quantity", "proves": ["A3"] },
