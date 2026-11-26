@@ -89,3 +89,26 @@ customer history and shared drafts.
 - No Amadiya migration or release; this ships to dev only.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `orderLineModel > converts a carton line to base units`, `NewOrderView > submits a carton line with its unit` fail on base, pass on tip (check:brief). Browser on dev: 6 × carton of Thai Panang placed as `ORD-1795665940702`; `order_items` row has `quantity 6, pack_size 6, uom_id 198`; preview $263.97 = order total $263.97 | carton discount priced as the Shop prices it |
+| A2 | claimed | `orderLineModel > flags a line whose base quantity exceeds available stock`, `NewOrderView > disables Place order while a line is over stock`. Browser: Copy last order put 26 Coconut Cream against 5 available; line flagged, Place order disabled until set to 5 | |
+| A3 | claimed | `NewOrderView > Enter on a SKU adds the line and focuses its quantity`. Browser: `AYM-CUR` + Enter added a line with focus in its quantity; typed 3; Enter back to quick-add | |
+| A4 | claimed | `customerHistory > ranks usual products by order frequency with the median quantity`, `customerHistory > returns the most recent order's lines as the last order`, plus unit-resolution tests and `toOrders > keeps the unit a line was ordered in`. Browser: Blue Gum Lodge shows usual products and 5 recent orders; Copy last order loaded 4 lines | the review found copied orders lost their unit (adapter never mapped `uom_id`); fixed in c5a90c9 |
+| A5 | claimed | `orderDraftPayload > rejects a line without a productId` (+8 payload tests). `npm run check:grants:dev`: "No new write grants" with `order_drafts` in `lockedTables.mjs`. Unauthenticated POST to `mutate-order-draft` on dev → `UNAUTHORIZED_NO_AUTH_HEADER` | |
+| A6 | claimed | `placeOrderCore draftId > deletes the named draft after the order commits` fails on base, passes on tip; `keeps the draft when the order fails`, `refuses a draft someone else has already placed` pass. Dev: `order_drafts` count 0 after the browser placement | |
+| A7 | claimed | `NewOrderView > opening a draft restores customer, lines, date and notes`, `auto-saves the order as a draft after a pause…`, plus orphan-delete and fork-on-NOT_FOUND tests. Browser: "Draft saved", Drafts (1), opened on 360px, Clear → Discard → Drafts (0) | |
+| A8 | claimed | `NewOrderView > the paste panel opens only from Import from paste` fails on base, passes on tip | |
+| A9 | claimed | Chrome at 1366px on nexorder.vercel.app: two panes, sticky summary. Headless Chromium at 360×664 (isMobile): main scrollWidth 360 = clientWidth, Place order bar at 608–652 of 664, history opens as a bottom sheet | the walk found two layout bugs (dropdown under quick-add; Nex Assistant button over Clear at 360px); fixed in cffce82 and re-walked |
+| A10 | claimed | `npm run migrate:dev` applied `00150_order_drafts.sql`; `check:grants:dev` clean | renumbered from 00148, which NX-0040 already holds on dev |
+| A11 | not-claimed | | not merged. Dev serves `36916e9`, a local merge of this branch with the unmerged NX-0040, so dev keeps the accounting export; `/version.json` verified, health 200. Re-verify after merge |
+
+### Not claimed
+
+- No real handheld or phone: 360px was headless Chromium, which (CLAUDE.md) cannot show the RS35's 56px URL-bar problem.
+- Closing the tab within 1.5s of an edit loses that edit: the unmount flush runs on navigating away inside the app, but nothing saves on `pagehide`.
+- Two people editing one draft at once was exercised only in unit tests (the 409 → fork path), not by two live sessions.
+- No Playwright e2e spec was added; the browser checks were one-off scripts.
+- Coverage percentage was not measured.
+- Nothing ran against Amadiya.
