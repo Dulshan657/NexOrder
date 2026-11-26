@@ -6,7 +6,7 @@
   "base": "455cfd74393c109ff36a6610280203b803eec499",
   "approved": "2026-11-26 owner",
   "acceptance": [
-    { "id": "A1", "check": "A line can be ordered in any of the product's units; 3 x a 12-each carton is submitted to place-order as quantity 36 of that product." },
+    { "id": "A1", "check": "A line can be ordered in any of the product's units; 3 x a 12-each carton is submitted to place-order as quantity 3 with that carton's uomId (so it prices like the Shop), and its stock check uses 36 base units." },
     { "id": "A2", "check": "When a line's base quantity exceeds the product's available stock, the line is flagged and Place order is disabled until it is fixed." },
     { "id": "A3", "check": "Keyboard entry: typing a SKU in the quick-add box and pressing Enter adds the line and focuses its quantity; Enter in that quantity returns focus to quick-add." },
     { "id": "A4", "check": "Customer history: 'Copy last order' loads that customer's most recent order's lines; 'Usual products' ranks products by how many of the customer's orders contain them, with the median quantity; any of the recent orders can be copied." },
@@ -26,7 +26,7 @@
     { "file": "__tests__/newOrder/orderDraftPayload.test.ts", "test": "orderDraftPayload > rejects a line without a productId", "proves": ["A5"] },
     { "file": "__tests__/placeOrderCore.test.ts", "test": "placeOrderCore draftId > deletes the named draft after the order commits", "proves": ["A6"] },
     { "file": "__tests__/placeOrderCore.test.ts", "test": "placeOrderCore draftId > keeps the draft when the order fails", "proves": ["A6"] },
-    { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > submits a carton line as base units", "proves": ["A1"] },
+    { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > submits a carton line with its unit", "proves": ["A1"] },
     { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > disables Place order while a line is over stock", "proves": ["A2"] },
     { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > Enter on a SKU adds the line and focuses its quantity", "proves": ["A3"] },
     { "file": "__tests__/newOrder/newOrderView.test.tsx", "test": "NewOrderView > the paste panel opens only from Import from paste", "proves": ["A8"] },
@@ -52,8 +52,13 @@ customer history and shared drafts.
   against `product.available`) and `customerHistory.ts` (last order, recent N,
   usual products). Pricing stays `resolvePromotionPrice`; CSV stays
   `resolveOrderLines`.
-- **Units are converted on the client.** `place-order` keeps receiving base
-  quantities; there is no `order_items` schema change.
+- **Units are sent as units.** `place-order` already accepts `uomId` per line,
+  records it on `order_items` and prices it as the Shop does (carton discount
+  included), so the screen sends `{ productId, quantity, uomId }` and converts
+  to base units only for its own stock check. No schema change.
+  *(Revised 2026-11-26: the first draft said the server had no UOM support and
+  planned a client-side conversion to base units; it does, and that conversion
+  would have skipped the carton discount. Owner chose to send the unit.)*
 - **Drafts**: migration `00148_order_drafts.sql` creates `order_drafts` (RLS on,
   SELECT for Admin/Manager, INSERT/UPDATE/DELETE/TRUNCATE revoked from
   authenticated and anon), registered in `config/lockedTables.mjs`. A new Edge
@@ -79,7 +84,7 @@ customer history and shared drafts.
 
 - The Shop and its cart are unchanged.
 - No new rep access to New Order; the screen stays Admin/Manager.
-- No UOM stored on `order_items`; pick slips keep showing base units.
+- No change to how pick slips show a line's unit.
 - No backorders; over-stock is blocked on the client and still refused by the server.
 - No Amadiya migration or release; this ships to dev only.
 
