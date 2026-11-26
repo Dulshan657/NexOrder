@@ -8,19 +8,29 @@ import type { LayoutPlacement, PickRouteStop, PutawayLineRecommendation, Slottin
 import { placementCenter } from './WarehouseCanvas'
 import { screenFont } from './mapLabels'
 import { routeOverlay2d } from '@/lib/warehouseRoute2d'
+import { MAP_COLOR, MAP_FONT } from './mapTokens'
 
 type PlacementLookup = Map<number, LayoutPlacement>
 
-const VIOLET = '#8b5cf6'
-const BLUE = '#2563eb'
+// Every colour here is a map token (index.css `--color-map-*`), never a literal.
+const VIOLET = MAP_COLOR.slot
+const BLUE = MAP_COLOR.target
 
-/** Suggested re-slotting moves: from (solid) → to (dashed) with an arrow + qty. */
+/**
+ * Suggested re-slotting moves: from (solid) → to (dashed) with an arrow + qty.
+ *
+ * The quantity is counter-scaled by `scale`, like every other label on the map.
+ * It used to be a raw `fontSize={10}` in user units — 4px on screen at the
+ * fitted view and 30px zoomed in.
+ */
 export function slottingArrows(
   cell: number,
   slotting: SlottingSuggestion[],
   placements: PlacementLookup,
   floor: number,
+  scale = 1,
 ): ReactNode {
+  const qtyFont = screenFont(10, scale)
   return (
     <g>
       <defs>
@@ -52,8 +62,10 @@ export function slottingArrows(
           parts.push(
             <line key={`l${s.id}`} x1={a.cx * cell} y1={a.cy * cell} x2={b.cx * cell} y2={b.cy * cell}
               stroke={VIOLET} strokeWidth={2} markerEnd="url(#wh-slot-arrow)" pointerEvents="none" />,
-            <text key={`q${s.id}`} x={((a.cx + b.cx) / 2) * cell} y={((a.cy + b.cy) / 2) * cell - 3}
-              textAnchor="middle" fontSize={10} fill="#6d28d9" fontFamily="monospace" pointerEvents="none">{s.qty}</text>,
+            <text key={`q${s.id}`} x={((a.cx + b.cx) / 2) * cell} y={((a.cy + b.cy) / 2) * cell - screenFont(4, scale)}
+              textAnchor="middle" fontSize={qtyFont} fontWeight={500} fill={MAP_COLOR.slotInk} fontFamily={MAP_FONT.mono}
+              stroke={MAP_COLOR.halo} strokeWidth={screenFont(3, scale)} paintOrder="stroke" strokeLinejoin="round"
+              pointerEvents="none">{s.qty}</text>,
           )
         }
         return <g key={s.id}>{parts}</g>
@@ -65,8 +77,8 @@ export function slottingArrows(
 /** Fuchsia, as in 3D: clear of the rack fills (emerald/violet/amber/red), the
  *  zone tints and the selection blue. Emerald was the old colour, and on MAIN's
  *  emerald fast-mover racks a stop simply disappeared. */
-const ROUTE_LINE = '#c026d3' // fuchsia-600
-const ROUTE_MARK = '#a21caf' // fuchsia-700
+const ROUTE_LINE = MAP_COLOR.route // fuchsia-600
+const ROUTE_MARK = MAP_COLOR.routeStop // fuchsia-700
 
 /**
  * Dry-run pick route (NX-0037): the walk the engine measured — from the dock,
@@ -91,20 +103,20 @@ export function routePath(
       {route.legs.map((leg, i) => (
         <g key={`leg${i}`}>
           {/* White casing: the line reads over any fill beneath it. */}
-          <polyline points={pts(leg)} fill="none" stroke="#fff" strokeWidth={u(7)} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={pts(leg)} fill="none" stroke={MAP_COLOR.halo} strokeWidth={u(7)} strokeLinejoin="round" strokeLinecap="round" />
           <polyline points={pts(leg)} fill="none" stroke={ROUTE_LINE} strokeWidth={u(4)} strokeLinejoin="round" strokeLinecap="round" />
         </g>
       ))}
       {route.start && (
         <g transform={`translate(${route.start[0] * cell},${route.start[1] * cell})`}>
-          <rect x={-u(22)} y={-u(9)} width={u(44)} height={u(18)} rx={u(9)} fill="#1c1917" stroke="#fff" strokeWidth={u(2)} />
-          <text y={u(3.5)} textAnchor="middle" fontSize={u(10)} fontWeight={700} fill="#fff">START</text>
+          <rect x={-u(22)} y={-u(9)} width={u(44)} height={u(18)} rx={u(9)} fill={MAP_COLOR.ink} stroke={MAP_COLOR.halo} strokeWidth={u(2)} />
+          <text y={u(3.5)} textAnchor="middle" fontSize={u(10)} fontWeight={700} fill={MAP_COLOR.inkInverse} fontFamily={MAP_FONT.sans}>START</text>
         </g>
       )}
       {route.markers.map((m) => (
         <g key={`stop${m.locationId}`} transform={`translate(${m.x * cell},${m.y * cell})`}>
-          <circle r={u(11)} fill={ROUTE_MARK} stroke="#fff" strokeWidth={u(2)} />
-          <text y={u(4)} textAnchor="middle" fontSize={u(m.label.length > 2 ? 9 : 11)} fontWeight={700} fill="#fff" fontFamily="monospace">
+          <circle r={u(11)} fill={ROUTE_MARK} stroke={MAP_COLOR.halo} strokeWidth={u(2)} />
+          <text y={u(4)} textAnchor="middle" fontSize={u(m.label.length > 2 ? 9 : 11)} fontWeight={500} fill={MAP_COLOR.inkInverse} fontFamily={MAP_FONT.mono}>
             {m.label}
           </text>
         </g>
@@ -149,7 +161,7 @@ export function putawayMarkers(
   return <g>{parts}</g>
 }
 
-const AMBER = '#d97706' // amber-600: distinct from the blue putaway target and the route line
+const AMBER = MAP_COLOR.holding // amber-600: distinct from the blue putaway target and the route line
 
 /**
  * Every place holding a found product (NX-0039 "Find a product"), outlined on

@@ -9,6 +9,7 @@
 // every overlay bucket colour (see the guard test, which checks ALL of them).
 
 import type { VelocityClass } from '@/types'
+import { OCCUPANCY_RAMP } from './mapTokens'
 
 export type OverlayKind =
   | 'none' | 'occupancy' | 'velocity' | 'congestion' | 'slotting' | 'unswept'
@@ -50,16 +51,84 @@ interface OccupancyBucketInfo {
   label: string
 }
 
-// Single source of truth: bucket → {map fill, tree pill classes, legend label}.
-// occupancyFill/occupancyPill/OCCUPANCY_LEGEND all derive from this table so
-// they can never drift apart.
+// ── The ramp (NX-0047) ───────────────────────────────────────────────────────
+// The map fill is CONTINUOUS: a 55% bin and a 78% bin are different colours, where
+// the old five buckets drew them identically. The stops (and why they stop at a
+// mid coral instead of a saturated red) are in mapTokens.ts.
+
+type Triple = [number, number, number]
+
+function srgbToLinear(channel: number): number {
+  const c = channel / 255
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+}
+
+function linearToSrgb(value: number): number {
+  const v = value <= 0.0031308 ? 12.92 * value : 1.055 * value ** (1 / 2.4) - 0.055
+  return Math.round(Math.max(0, Math.min(1, v)) * 255)
+}
+
+/** sRGB hex → OKLab. Interpolating there, rather than in sRGB, is what keeps the
+ *  midpoints from sagging toward grey and the steps perceptually even. */
+function hexToOklab(hex: string): Triple {
+  const [r, g, b] = [1, 3, 5].map((i) => srgbToLinear(parseInt(hex.slice(i, i + 2), 16)))
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ]
+}
+
+function oklabToHex([L, a, b]: Triple): string {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3
+  const rgb = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ]
+  return `#${rgb.map((c) => linearToSrgb(c).toString(16).padStart(2, '0')).join('')}`
+}
+
+const RAMP_LAB = OCCUPANCY_RAMP.map(([at, hex]) => ({ at, hex, lab: hexToOklab(hex) }))
+
+/**
+ * The occupancy ramp at `pct` (0 = empty, 1 = full). Clamped: over-capacity
+ * reads as full, because a stop darker than the last one could not carry the
+ * label ink — "over" is said by the number on the bin, not by a redder red.
+ */
+export function occupancyColor(pct: number): string {
+  const p = Math.max(0, Math.min(1, Number.isFinite(pct) ? pct : 0))
+  const upper = RAMP_LAB.findIndex((stop) => stop.at >= p)
+  if (upper <= 0) return RAMP_LAB[0].hex
+  const from = RAMP_LAB[upper - 1]
+  const to = RAMP_LAB[upper]
+  if (to.at === p) return to.hex
+  const t = (p - from.at) / (to.at - from.at)
+  return oklabToHex(from.lab.map((v, i) => v + (to.lab[i] - v) * t) as Triple)
+}
+
+/** CSS gradient of the ramp, for the legend's bar. */
+export const OCCUPANCY_GRADIENT_CSS =
+  `linear-gradient(to right, ${OCCUPANCY_RAMP.map(([at, hex]) => `${hex} ${at * 100}%`).join(', ')})`
+
+const EMPTY_FILL = '#ffffff'
+
+// Bucket → {representative fill, tree pill classes, legend label}. The pill and
+// the bucket boundaries are unchanged; `fill` is the ramp sampled inside the
+// band, so the swatch legend (still used beside the 3D view) and the map cannot
+// drift apart.
 const OCCUPANCY_BUCKETS: Record<OccupancyBucket, OccupancyBucketInfo> = {
   none: { fill: NEUTRAL, pill: 'bg-stone-100 text-stone-500', label: 'No capacity' },
-  empty: { fill: '#ffffff', pill: 'bg-stone-100 text-stone-600', label: 'Empty' },
-  low: { fill: '#6ee7b7', pill: 'bg-emerald-100 text-emerald-700', label: '<50%' }, // emerald-300
-  mid: { fill: '#fcd34d', pill: 'bg-amber-100 text-amber-700', label: '50–80%' }, // amber-300
-  high: { fill: '#fb923c', pill: 'bg-orange-100 text-orange-700', label: '80–100%' }, // orange-400
-  full: { fill: '#ef4444', pill: 'bg-red-100 text-red-700', label: 'Full / over' }, // red-500 (at/over capacity)
+  empty: { fill: EMPTY_FILL, pill: 'bg-stone-100 text-stone-600', label: 'Empty' },
+  low: { fill: occupancyColor(0.25), pill: 'bg-emerald-100 text-emerald-700', label: '<50%' },
+  mid: { fill: occupancyColor(0.65), pill: 'bg-amber-100 text-amber-700', label: '50–80%' },
+  high: { fill: occupancyColor(0.9), pill: 'bg-orange-100 text-orange-700', label: '80–100%' },
+  full: { fill: occupancyColor(1), pill: 'bg-red-100 text-red-700', label: 'Full / over' },
 }
 
 /** Bucket boundaries: none(null) empty(<=0) low(<0.5) mid(<0.8) high(<1) full(>=1). */
@@ -72,8 +141,12 @@ export function occupancyBucket(pct?: number | null): OccupancyBucket {
   return 'full'
 }
 
+/** The map fill: neutral with no capacity configured, white when empty (nothing
+ *  here is a different fact from "a little here"), the ramp otherwise. */
 export function occupancyFill(pct: number | null | undefined): string {
-  return OCCUPANCY_BUCKETS[occupancyBucket(pct)].fill
+  if (pct == null) return NEUTRAL
+  if (pct <= 0) return EMPTY_FILL
+  return occupancyColor(pct)
 }
 
 /** Tailwind bg/text classes for the tree's fill pill — same bucket table as the map fill. */

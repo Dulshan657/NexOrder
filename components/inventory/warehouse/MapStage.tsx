@@ -3,23 +3,28 @@
 // state stay with the caller — it only owns the viewport gesture wiring, the
 // drag-vs-click suppression, and the hover card.
 //
-// MapControls docks bottom-left inside this container, and a first-hover hint
-// pill docks top-right. Both are on-map chrome that lives inside this
-// component's own `relative isolate` stacking context; every other panel
+// On-map chrome, all inside this component's own `relative isolate` stacking
+// context: the legend docks bottom-left, MapControls is a vertical stack
+// bottom-right above the scale bar, and a first-hover hint pill docks top-right.
+// Anything of it that can be pressed carries `data-map-control`. Every other panel
 // (tree, bin detail, overlays, ask-engine) now renders below the map in
 // normal document flow, not as a floating sibling — the wheel listener no
 // longer preventDefaults unconditionally (it requires Ctrl/⌘), so there's no
 // scroll-trap for a panel to worry about.
 //
-// The hover card lives here rather than in the canvas because positioning it
-// needs the viewport transform (which this component owns) and because HTML
-// gives it text wrapping and shadows that an SVG <text> cannot. The canvas also
-// emits a plain <title> per bin as the no-pointer/assistive fallback.
+// The hover card (BinHoverCard.tsx) is mounted here rather than in the canvas
+// because positioning it needs the viewport transform and the container's box
+// (both of which this component owns) and because HTML gives it text wrapping
+// and shadows that an SVG <text> cannot. The canvas also emits a plain <title>
+// per bin as the no-pointer/assistive fallback.
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
 import { WarehouseCanvas, type BinInfo, type BinHover } from './WarehouseCanvas'
 import { MapControls } from './MapControls'
+import { MapLegend } from './MapLegend'
+import { BinHoverCard } from './BinHoverCard'
+import type { LegendEntry, OverlayKind } from './warehouseOverlays'
 import { useMapViewport } from './useMapViewport'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import { ScaleIndicator } from '@/components/admin/layout/ScaleIndicator'
@@ -51,6 +56,11 @@ export interface MapStageProps {
   renderOverlay?: (cell: number, scale: number) => ReactNode
   /** Location metadata for labelling a rack's exploded level stack (mig 00072). */
   locationsById?: Map<number, InventoryLocation>
+  /** The active overlay, for the on-map legend. Absent → no overlay rows. */
+  overlay?: OverlayKind
+  /** Legend rows for what the map shows besides the overlay (forms, roles,
+   *  areas, zones). Never reaches the canvas, so its identity is free to change. */
+  legendEntries?: readonly LegendEntry[]
   /** Admin/Manager clicked an area's name to rename it (mig 00094). Passed
    *  straight through; the canvas routes it via `guardClick` so a pan that ends
    *  over the label does not open a dialog. */
@@ -145,6 +155,8 @@ export function MapStage({
   zoneTypeByProfileId,
   renderOverlay,
   locationsById,
+  overlay = 'none',
+  legendEntries,
   onRenameArea,
   onEditSign,
   paint,
@@ -315,7 +327,7 @@ export function MapStage({
       role="application"
       tabIndex={0}
       aria-label="Warehouse floor plan — arrow keys pan, plus and minus zoom, 0 to fit"
-      className={`relative isolate h-full w-full select-none overflow-hidden rounded-lg border border-stone-200 bg-stone-50 outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ${
+      className={`relative isolate h-full w-full select-none overflow-hidden rounded-xl border border-stone-200 map-floor outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue-dark ${
         painting || sweeping ? 'cursor-crosshair' : coarsePointer ? '' : isPanning ? 'cursor-grabbing' : 'cursor-grab'
       }`}
       // `touch-action: none` is required for any of this to work on a phone —
@@ -468,7 +480,17 @@ export function MapStage({
         onEditSign={onEditSign}
       />
       {hover && hoverInfo && (
-        <BinHoverCard hover={hover} info={hoverInfo} viewport={viewport} />
+        <BinHoverCard
+          hover={hover}
+          info={hoverInfo}
+          viewport={viewport}
+          // Read at render: a card only exists while a pointer is over a cell,
+          // which is long after the container has been measured.
+          bounds={{
+            width: containerRef.current?.clientWidth ?? 0,
+            height: containerRef.current?.clientHeight ?? 0,
+          }}
+        />
       )}
       {/* The selection and its proposed codes. Same argument as the band below,
           only stronger: this changes on every painted cell. */}
@@ -482,6 +504,7 @@ export function MapStage({
       {select?.rect && select.rect.floor === floor && (
         <MarqueeBand rect={select.rect} viewport={viewport} erase={eraseStroke} />
       )}
+      <MapLegend overlay={overlay} extraEntries={legendEntries} defaultCollapsed={coarsePointer} />
       <MapControls
         scale={viewport.scale}
         onZoomIn={zoomIn}
@@ -500,14 +523,14 @@ export function MapStage({
           the operator's eyes are here, not there. `aria-hidden` deliberately: it
           changes on every painted cell and a live region would machine-gun a screen
           reader. The accessible count is the panel's.
-          TOP-RIGHT, not top-left: MapControls owns bottom-left and the scale bar
-          bottom-right, and this sat top-left until a screenshot showed it half
+          TOP-RIGHT, not top-left: the legend owns bottom-left and MapControls and
+          the scale bar bottom-right, and this sat top-left until a screenshot showed it half
           hidden under the AppShell menu button, which used to float over the map's
           top-left corner. That button now lives in a flow-positioned mobile top bar
           and overlaps nothing, so the original hazard is gone — but top-right is
           still the right corner here, for the MapControls reason above. */}
       {sweeping && select && (
-        <div className="map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium" aria-hidden="true">
+        <div className="map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-xs font-medium" aria-hidden="true">
           <span className="font-semibold tabular-nums text-nexgen-blue">{select.selectedCount}</span>
           <span className="text-stone-600"> location{select.selectedCount === 1 ? '' : 's'} selected</span>
         </div>
@@ -518,7 +541,7 @@ export function MapStage({
       {!sweeping && (
         <div
           aria-hidden="true"
-          className={`map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium text-stone-600 transition-opacity duration-300 motion-reduce:duration-0 ${
+          className={`map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-xs font-medium text-stone-600 transition-opacity duration-300 motion-reduce:duration-0 ${
             hintPhase === 'shown' ? 'opacity-100' : 'opacity-0'
           }`}
         >
@@ -560,43 +583,5 @@ function MarqueeBand({ rect, viewport, erase = false }: MarqueeBandProps) {
         height: (y1 - y0 + 1) * px,
       }}
     />
-  )
-}
-
-interface BinHoverCardProps {
-  hover: BinHover
-  info: BinInfo
-  viewport: { scale: number; tx: number; ty: number }
-}
-
-/** Floating detail card, anchored above the hovered cell.
- *
- *  `pointer-events-none` is essential: the card overlaps the cell that spawned
- *  it, and an interactive card would steal the pointerleave and strobe. */
-function BinHoverCard({ hover, info, viewport }: BinHoverCardProps) {
-  const left = viewport.tx + (hover.x + hover.w / 2) * BASE_CELL * viewport.scale
-  const top = viewport.ty + hover.y * BASE_CELL * viewport.scale
-
-  return (
-    <div
-      aria-hidden="true"
-      className="map-panel-pill pointer-events-none absolute z-30 max-w-[16rem] -translate-x-1/2 -translate-y-full px-2.5 py-1.5 text-[11px] leading-snug text-stone-700"
-      style={{ left, top: top - 8 }}
-    >
-      <p className="font-mono font-semibold text-stone-900">{info.code}</p>
-      <p className="text-stone-500">
-        {hover.levelCount > 0 && <>{hover.levelCount} levels · </>}
-        {hover.fillPct != null ? `${Math.round(hover.fillPct * 100)}% full` : 'No capacity set'}
-        {info.capacitySlots ? ` of ${info.capacitySlots} ${info.slotKind ?? 'slot'}s` : ''}
-      </p>
-      {info.contentsCount > 0 ? (
-        <p className="truncate text-stone-500">
-          {info.topSku}
-          {info.contentsCount > 1 && ` +${info.contentsCount - 1} more`}
-        </p>
-      ) : (
-        <p className="text-stone-500">Empty</p>
-      )}
-    </div>
   )
 }

@@ -797,7 +797,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
       {productHighlight && holdingMarkers(cell, scale, productHighlight.locationIds, placementByLocation, floor)}
       {routeStops.length > 0 && routePath(cell, scale, routeStops, placementByLocation, floor)}
       {putawayRec && putawayMarkers(cell, putawayRec, placementByLocation, floor)}
-      {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor)}
+      {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor, scale)}
     </g>
   ), [productHighlight, routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
 
@@ -1035,6 +1035,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           zoneTypeByProfileId={zoneTypeByProfileId}
           renderOverlay={renderMarkers}
           locationsById={model.locationsById}
+          overlay={overlay}
+          legendEntries={legendExtras}
           // The pencil and paint mode must never be live together: both rewrite
           // the same rows, and a rename applied against a working set that has
           // not been saved would be computed from a picture the server has
@@ -1304,7 +1306,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           inert, and the overlay is pinned to `unswept` until the sweep ends. Desktop
           is untouched. */}
       <div className={`glass-card rounded-xl p-3 ${recode.state.active ? 'hidden lg:block' : ''}`}>
-        <OverlayControls overlay={overlay} onChange={setOverlay} extraEntries={legendExtras} />
+        <OverlayControls overlay={overlay} onChange={setOverlay} inlineLegend={threeD} extraEntries={legendExtras} />
       </div>
 
       <div

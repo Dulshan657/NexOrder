@@ -1,7 +1,11 @@
-// Segmented control for the grid overlay + a legend for the active one.
+// Segmented control for the grid overlay.
+//
+// The legend left this strip in NX-0047: on the 2D map it is a card ON the map
+// (MapLegend, mounted by MapStage), next to the colours it explains. It is still
+// drawn here in 3D, where MapStage — and so that card — is unmounted.
 
 import type { OverlayKind, LegendEntry } from './warehouseOverlays'
-import { legendFor } from './warehouseOverlays'
+import { MapLegend } from './MapLegend'
 
 const OPTIONS: { kind: OverlayKind; label: string }[] = [
   { kind: 'none', label: 'None' },
@@ -16,29 +20,17 @@ const OPTIONS: { kind: OverlayKind; label: string }[] = [
 interface OverlayControlsProps {
   overlay: OverlayKind
   onChange: (overlay: OverlayKind) => void
+  /** Draw the legend in this strip. True only while the 3D view is up; the 2D
+   *  map carries its own. */
+  inlineLegend?: boolean
   /** Legend rows for what the map shows besides the active overlay — storage
    *  forms, level roles, zone types. Supplied by the caller because only it
-   *  knows which of those are actually present in this warehouse; listing all
-   *  of them every time is noise, and `legendFor('none')` is empty, which left
-   *  the strip blank at rest even though the map was full of colour. */
+   *  knows which of those are actually present in this warehouse. Used only
+   *  with `inlineLegend`. */
   extraEntries?: LegendEntry[]
 }
 
-function Legend({ entries }: { entries: LegendEntry[] }) {
-  if (entries.length === 0) return null
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-stone-500">
-      {entries.map((e, i) => (
-        <span key={i} className="inline-flex items-center gap-1">
-          <span className="inline-block h-3 w-3 rounded-sm border border-stone-200" style={{ backgroundColor: e.color }} />
-          {e.label}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-export function OverlayControls({ overlay, onChange, extraEntries = [] }: OverlayControlsProps) {
+export function OverlayControls({ overlay, onChange, inlineLegend = false, extraEntries = [] }: OverlayControlsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="inline-flex flex-wrap rounded-lg border border-stone-200 bg-stone-100 p-0.5">
@@ -55,7 +47,7 @@ export function OverlayControls({ overlay, onChange, extraEntries = [] }: Overla
           </button>
         ))}
       </div>
-      <Legend entries={[...legendFor(overlay), ...extraEntries]} />
+      {inlineLegend && <MapLegend variant="inline" overlay={overlay} extraEntries={extraEntries} />}
     </div>
   )
 }

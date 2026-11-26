@@ -101,6 +101,34 @@
   --color-nexgen-navy: #0A2E52;
 }
 
+/* Warehouse live map (NX-0047). A plain :root block rather than @theme on
+   purpose: these are consumed as `var()` from SVG presentation attributes in
+   TSX, and a theme variable nothing references as a utility is not guaranteed
+   to be emitted. components/inventory/warehouse/mapTokens.ts names every one of
+   them; __tests__/warehouseMapPolish.test.ts asserts the two files agree. */
+:root {
+  --color-map-floor: #fcfbf9;
+  --color-map-floor-edge: #f2efea;
+  --color-map-grid: #e7e5e4;
+  --color-map-ink: #1c1917;
+  --color-map-ink-muted: #44403c;
+  --color-map-ink-inverse: #ffffff;
+  --color-map-halo: #ffffff;
+  --color-map-scrim: rgb(28 25 23 / 0.42);
+  --color-map-selection: #059669;
+  --color-map-selection-inner: #ffffff;
+  --color-map-hover: #2472c2;
+  --color-map-rack-shadow: rgb(68 64 60 / 0.3);
+  --color-map-sheen-light: rgb(255 255 255 / 0.38);
+  --color-map-sheen-shade: rgb(28 25 23 / 0.07);
+  --color-map-slot: #8b5cf6;
+  --color-map-slot-ink: #6d28d9;
+  --color-map-route: #c026d3;
+  --color-map-route-stop: #a21caf;
+  --color-map-target: #2563eb;
+  --color-map-holding: #d97706;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: #f5f5f5;
@@ -523,8 +551,24 @@ body {
 .wh-bin {
   transition: fill .15s ease, stroke .15s ease;
 }
-.wh-bin:hover {
-  filter: brightness(.97);
+/* Hover is a RING, not a brightness filter (NX-0047): a filter on a hovered
+   rect forces its own raster pass and muddies the form colour, and on a dark
+   fill a 3% dim is invisible. The rule is on the GROUP so it also fires while
+   the pointer is over the cell's label or spine; a selected cell keeps its own
+   two rings. `hover: hover` keeps a tap on the handheld from leaving one stuck. */
+@media (hover: hover) {
+  .wh-cell:hover > .wh-bin:not(.wh-bin-selected) {
+    stroke: var(--color-map-hover);
+    stroke-width: 2.5px;
+  }
+}
+
+/* The floor: warm off-white, darkening very slightly toward the edges so the
+   racks sit on a surface rather than on a flat fill. */
+.map-floor {
+  background:
+    radial-gradient(ellipse at center, transparent 55%, var(--color-map-floor-edge) 100%),
+    var(--color-map-floor);
 }
 
 /* 7c: pick-route legs draw themselves on, sequenced by the stop's order.
