@@ -58,7 +58,8 @@ customer history and shared drafts.
   *(Revised 2026-11-26: the first draft said the server had no UOM support and
   planned a client-side conversion to base units; it does, and that conversion
   would have skipped the carton discount. Owner chose to send the unit.)*
-- **Drafts**: migration `00148_order_drafts.sql` creates `order_drafts` (RLS on,
+- **Drafts**: migration `00150_order_drafts.sql` (renumbered from `00148`, which
+  NX-0040's accounting export already holds on dev, with `00149`) creates `order_drafts` (RLS on,
   SELECT for Admin/Manager, INSERT/UPDATE/DELETE/TRUNCATE revoked from
   authenticated and anon), registered in `config/lockedTables.mjs`. A new Edge
   Function `mutate-order-draft` (`upsert`/`delete`) validates through a pure
