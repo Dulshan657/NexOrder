@@ -162,7 +162,9 @@ export function MapStage({
   paint,
   select,
 }: MapStageProps) {
-  const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, coarsePointer, track, startPinch } = useMapViewport({
+  const {
+    viewport, settledScale, inMotion, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, coarsePointer, track, startPinch,
+  } = useMapViewport({
     placements,
     objects,
     floor,
@@ -461,6 +463,10 @@ export function MapStage({
         objects={objects}
         floor={floor}
         viewport={viewport}
+        settledScale={settledScale}
+        // isPanning is true from the press, so a plain click drops the shadow for
+        // its few ms too. Harmless, and cheaper than tracking the drag threshold here.
+        moving={isPanning || inMotion || settledScale !== viewport.scale}
         selectedLocationId={selectedLocationId}
         highlightedLocationIds={highlightedLocationIds}
         onSelectBin={guardedSelectBin}

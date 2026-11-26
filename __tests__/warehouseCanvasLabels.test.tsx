@@ -207,7 +207,8 @@ describe('WarehouseCanvas — areas', () => {
   it('tints and names the zone derived from its bins', () => {
     const { container } = renderCanvas(1)
     expect(container.textContent).toContain('Cold room · Cold')
-    const washes = container.querySelectorAll('rect[fill="#0ea5e9"]')
+    // One <path> per zone since NX-0047 (it was a <rect> per cell).
+    const washes = container.querySelectorAll('path[fill="#0ea5e9"]')
     expect(washes.length).toBeGreaterThan(0)
   })
 

@@ -563,6 +563,13 @@ body {
   }
 }
 
+/* While the map moves (pan, pinch, glide, zoom) the rack shadow is dropped: one
+   filter over the whole rack layer is cheap once, but costly redone every frame.
+   It returns the frame the map comes to rest (NX-0047). */
+svg[data-moving] [data-rack-layer] {
+  filter: none;
+}
+
 /* The floor: warm off-white, darkening very slightly toward the edges so the
    racks sit on a surface rather than on a flat fill. */
 .map-floor {

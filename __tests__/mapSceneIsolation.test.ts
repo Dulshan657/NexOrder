@@ -67,3 +67,36 @@ describe('RackedWorkspace keeps its scene-memo dependencies stable', () => {
     )
   })
 })
+
+// NX-0047 A4/A5. The pan was already isolated (above); a ZOOM still rebuilt the
+// whole scene on every wheel tick, because the live scale was a memo dependency.
+// The scene is now drawn at a SETTLED scale that changes once a zoom stops, while
+// the live one rides on the <g transform>. And two layers drew a DOM node per row,
+// column or cell where one element does the job.
+describe('WarehouseCanvas zooms without rebuilding its scene', () => {
+  const canvas = read('components/inventory/warehouse/WarehouseCanvas.tsx')
+  const memoDeps = (() => {
+    const start = canvas.indexOf('const scene = useMemo(')
+    const close = canvas.indexOf('}, [', start)
+    return canvas.slice(close, canvas.indexOf('])', close))
+  })()
+
+  it('the scene memo depends on the settled scale, not the live one', () => {
+    expect(canvas).toMatch(/const scale = settledScale \?\? viewport\.scale/)
+    expect(memoDeps).toMatch(/\bscale\b/)
+    expect(memoDeps).not.toMatch(/viewport/)
+    // The live scale still moves the picture, on the transform alone.
+    expect(canvas).toMatch(/scale\(\$\{viewport\.scale\}\)/)
+    // And MapStage hands the canvas the hook's settled scale.
+    const stage = read('components/inventory/warehouse/MapStage.tsx')
+    expect(stage).toMatch(/settledScale=\{settledScale\}/)
+  })
+
+  it('draws the grid as one pattern and each zone wash as one path', () => {
+    expect(canvas).toMatch(/<pattern\b/)
+    expect(canvas).not.toMatch(/Array\.from\(\{ length: gridWidth \+ 1 \}/)
+    expect(canvas).not.toMatch(/Array\.from\(\{ length: gridHeight \+ 1 \}/)
+    // No rect per zone cell.
+    expect(canvas).not.toMatch(/region\.cells\.map\(/)
+  })
+})

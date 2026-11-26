@@ -159,6 +159,14 @@ export interface WarehouseCanvasProps {
   /** Admin/Manager clicked a floor sign's text to edit or remove it (mig 00097).
    *  Omitted → signs are inert, which is what every read-only surface wants. */
   onEditSign?: (signName: string) => void
+  /** The scale the scene is DRAWN at (NX-0047): text sizes, label tiers and
+   *  hairlines are computed from it, and it changes only once a zoom stops.
+   *  The live `viewport.scale` still moves the picture every frame, on the
+   *  transform. Absent → the live scale (the scene then rebuilds per frame). */
+  settledScale?: number
+  /** The map is moving (pan, pinch, glide, zoom). Drops the rack shadow for the
+   *  duration, so a moving frame is one cheap raster rather than a filter pass. */
+  moving?: boolean
 }
 
 export function WarehouseCanvas({
@@ -184,6 +192,8 @@ export function WarehouseCanvas({
   onHoverBin,
   onRenameArea,
   onEditSign,
+  settledScale,
+  moving = false,
 }: WarehouseCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). A level whose role has been
   // retired still renders with its own colour, because getLevelRoles returns
@@ -191,7 +201,9 @@ export function WarehouseCanvas({
   const { data: levelRoles = [] } = useLevelRoles()
   const cell = BASE_CELL
   const { gridWidth, gridHeight } = layout
-  const scale = viewport.scale
+  // The SETTLED scale, not the live one: see the prop. Everything in the scene
+  // memo reads this, so a zoom in progress costs one attribute per frame.
+  const scale = settledScale ?? viewport.scale
 
   // These three are memoized for identity, not for the cost of the work: they
   // are dependencies of the scene memo below, and `filter` returns a fresh array
@@ -309,20 +321,18 @@ export function WarehouseCanvas({
     return (
       <>
         {/* Zone washes — under the grid so the grid still reads through them. */}
+        {/* One path per zone, not a rect per cell: the cells are unit squares
+            in one path, so they fill as a union with no seams between them. */}
         {zoneRegions?.map((region) => {
           const tint = zoneTint(
             region.zoneProfileId != null ? zoneTypeByProfileId?.get(region.zoneProfileId) : null,
           )
           return (
-            <g key={`zone-fill-${region.zoneId}`} pointerEvents="none">
-              {region.cells.map((c) => (
-                <rect
-                  key={`${c.x}:${c.y}`}
-                  x={c.x * cell} y={c.y * cell} width={cell} height={cell}
-                  fill={tint} fillOpacity={ZONE_FILL_OPACITY}
-                />
-              ))}
-            </g>
+            <path
+              key={`zone-fill-${region.zoneId}`} pointerEvents="none"
+              d={cellsPath(region.cells, cell)}
+              fill={tint} fillOpacity={ZONE_FILL_OPACITY}
+            />
           )
         })}
 
@@ -345,21 +355,26 @@ export function WarehouseCanvas({
           )
         })}
 
-        {/* Grid lines */}
-        {Array.from({ length: gridWidth + 1 }, (_, i) => (
-          <line
-            key={`v${i}`}
-            x1={i * cell} y1={0} x2={i * cell} y2={gridHeight * cell}
-            stroke={MAP_COLOR.grid} strokeWidth={1} vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {Array.from({ length: gridHeight + 1 }, (_, i) => (
-          <line
-            key={`h${i}`}
-            x1={0} y1={i * cell} x2={gridWidth * cell} y2={i * cell}
-            stroke={MAP_COLOR.grid} strokeWidth={1} vectorEffect="non-scaling-stroke"
-          />
-        ))}
+        {/* Grid: one patterned rect, not a <line> per row and column. The
+            stroke is counter-scaled by hand (u(1)) because vector-effect is not
+            honoured inside a pattern tile. Below GRID_MIN_CELL_PX on screen the
+            lines would be closer than they are wide, a grey moiré rather than a
+            grid, so the grid is left out and the floor shows through. */}
+        {cellPx >= GRID_MIN_CELL_PX && (
+          <>
+            <defs>
+              <pattern id={MAP_GRID_ID} width={cell} height={cell} patternUnits="userSpaceOnUse">
+                <path d={`M ${cell} 0 L 0 0 0 ${cell}`} fill="none" stroke={MAP_COLOR.grid} strokeWidth={u(1)} />
+              </pattern>
+            </defs>
+            <rect
+              pointerEvents="none"
+              x={0} y={0} width={gridWidth * cell} height={gridHeight * cell}
+              fill={`url(#${MAP_GRID_ID})`}
+              stroke={MAP_COLOR.grid} strokeWidth={1} vectorEffect="non-scaling-stroke"
+            />
+          </>
+        )}
 
         {/* Zone outlines — only the edges facing out of each region, so an
             L-shaped zone traces its notch instead of being boxed in. */}
@@ -912,6 +927,7 @@ export function WarehouseCanvas({
       className="block h-full w-full"
       role="img"
       aria-label={`${layout.name} floor ${floor + 1}`}
+      data-moving={moving || undefined}
     >
       {SCENE_DEFS}
       <g transform={`translate(${viewport.tx},${viewport.ty}) scale(${viewport.scale})`}>
@@ -923,6 +939,17 @@ export function WarehouseCanvas({
 
 /** Figures that change under the eye (a fill %) must not shimmy as they do. */
 const TABULAR: CSSProperties = { fontVariantNumeric: 'tabular-nums' }
+
+/** The grid's pattern tile. One canvas is mounted at a time, so a fixed id is safe,
+ *  as it is for the shadow and sheen in SCENE_DEFS. */
+const MAP_GRID_ID = 'wh-map-grid'
+/** Below this many screen pixels per cell the grid is noise, not structure. */
+const GRID_MIN_CELL_PX = 6
+
+/** A set of grid cells as ONE path of unit squares: the cells fill as a union. */
+function cellsPath(cells: readonly { x: number; y: number }[], cell: number): string {
+  return cells.map((c) => `M${c.x * cell} ${c.y * cell}h${cell}v${cell}h${-cell}z`).join('')
+}
 
 /**
  * The scene's two shared definitions. A module constant, so it is one element
