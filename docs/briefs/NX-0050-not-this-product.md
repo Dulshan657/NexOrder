@@ -117,3 +117,20 @@ A carton whose label (barcode) says one product but holds another — say a chil
 - The Amadiya release is a separate owner step after merge.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `ReceiveLineCard > Not this product? swaps the line …` and `… Undo puts the line back as it was` proven; `stageProduct and a label-mismatch line (NX-0050) > a rescan of the real product starts a new line …` | Offered on loose lines and on mixed-pallet lines, searching the whole catalogue. The hold box is locked on a swapped line |
+| A2 | not-claimed | receive-stock deployed to dev; refusal of a same, blank or unknown label product is in code | No over-HTTP receive test was run. To be shown on Amadiya in the scenario walk |
+| A3 | claimed | `planWrongProduct > …` (2 tests) proven; `npm run test:integration -- labelMismatch` on dev 8/8: re-record at the root, the label barcode used when no code is sent, lot-received stock, split tasks on one plate closed together, stock gone gives CONFLICT and writes nothing, refusals | The dry-run hold check and the 'NOT yet held' path are in code, but no HTTP test drives them |
+| A4 | claimed | Role list and Warehouse scoping in report-wrong-product (same check as complete-putaway); the refusals are in the integration suite | No HTTP test with a Warehouse user from another site |
+| A5 | claimed | `mismatchNotice > names the scanned code, both products and what to do` proven; NotificationCenter shows Mark resolved as its own button | Not exercised in a browser |
+| A6 | claimed | Integration: RLS on, only `authenticated:SELECT`, function service_role only; `npm run check:grants:dev`: "No new write grants. Every locked table is locked, or baselined." with label_mismatches in lockedTables | The per-row policies (own rows for Warehouse) are not exercised by a test |
+| A7 | claimed | `npm run migrate:dev` applied 00152; report-wrong-product, resolve-label-mismatch and receive-stock deployed to dev | Dev frontend not redeployed |
+
+### Not claimed
+
+- Over-HTTP runs of report-wrong-product, resolve-label-mismatch and receive-stock with a label_mismatch: they move to the Amadiya scenario walk after release.
+- A label's lot is not carried to the real product: the real product is recorded with no batch.
+- The Walk sends no scanned code, so its record names the label product's own barcode (or SKU).
+- A Warehouse user can record any real product and count. This is the same trust adjust-stock already gives, and it is audited.
