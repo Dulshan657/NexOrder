@@ -22,6 +22,7 @@ import { useToastActions } from '../../../hooks/useToasts';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import ReplenPolicyBar from './ReplenPolicyBar';
 import HomeBinProblemsPanel from './HomeBinProblemsPanel';
+import PutawayCapacityToggle from './PutawayCapacityToggle';
 import ReplenSetupRow, { type BinOption } from './ReplenSetupRow';
 import { applyReplenCsv, exportReplenCsv } from './replenCsv';
 import {
@@ -42,11 +43,13 @@ import {
 interface ReplenSetupViewProps {
   warehouseId: number;
   warehouseName: string;
+  /** An Admin: may change the site-wide putaway capacity switch (NX-0049). */
+  canEditSettings?: boolean;
 }
 
 type Filter = 'here' | 'unset' | 'armed' | 'all';
 
-const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehouseName }) => {
+const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehouseName, canEditSettings = false }) => {
   const { data: config, isLoading, error } = useReplenConfig(warehouseId);
   const { data: locations } = useWarehouseLocations(warehouseId);
   const { data: levelRoles = [] } = useLevelRoles();
@@ -316,6 +319,8 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
           </p>
         </div>
       )}
+
+      <PutawayCapacityToggle canEdit={canEditSettings} />
 
       <HomeBinProblemsPanel warehouseId={warehouseId} />
 

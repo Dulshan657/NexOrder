@@ -798,6 +798,9 @@ export function toAppSettings(row: SettingsRow): AppSettings {
     palletMaxLoadHeightMm:
       (row as { pallet_max_load_height_mm?: number }).pallet_max_load_height_mm
       ?? AU_STANDARD_PALLET.maxLoadHeightMm,
+    // NX-0049 (mig 00151). Off when a row predates the column, as the column default.
+    putawayIgnoreCapacity:
+      (row as { putaway_ignore_capacity?: boolean }).putaway_ignore_capacity ?? false,
   }
 }
 
@@ -829,6 +832,7 @@ export function fromAppSettings(s: Partial<AppSettings>): Record<string, unknown
   if (s.palletBaseHeightMm !== undefined) row.pallet_base_height_mm = s.palletBaseHeightMm
   if (s.palletMaxLoadHeightMm !== undefined)
     row.pallet_max_load_height_mm = s.palletMaxLoadHeightMm
+  if (s.putawayIgnoreCapacity !== undefined) row.putaway_ignore_capacity = s.putawayIgnoreCapacity
   return row
 }
 

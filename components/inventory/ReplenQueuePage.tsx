@@ -207,6 +207,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
           {stage === 'setup' && canConfigure && (
             <ReplenSetupView
               warehouseId={effectiveWarehouseId}
+              canEditSettings={currentUser.role === UserRole.ADMIN}
               warehouseName={
                 activeWarehouses.find((w) => w.id === effectiveWarehouseId)?.name ?? 'this warehouse'
               }
