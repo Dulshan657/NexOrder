@@ -89,7 +89,9 @@ export function stageProduct(
     : undefined
 
   if (group) {
-    const onGroup = state.lines.find((l) => l.plateKey === group.key && l.productId === product.id)
+    // A line swapped by "Not this product?" (NX-0050) is a held mismatch: a
+    // correctly labelled carton of the same product starts its own line.
+    const onGroup = state.lines.find((l) => l.plateKey === group.key && l.productId === product.id && !l.labelMismatch)
     return onGroup ? countOn(state, onGroup.key) : addLine(state, product, group.key, quarantine)
   }
 
@@ -102,7 +104,7 @@ export function stageProduct(
   }
 
   const mixedKeys = new Set(state.plates.filter((p) => p.mixed).map((p) => p.key))
-  const loose = state.lines.filter((l) => l.productId === product.id && !mixedKeys.has(l.plateKey))
+  const loose = state.lines.filter((l) => l.productId === product.id && !mixedKeys.has(l.plateKey) && !l.labelMismatch)
   if (loose.length > 0) return countOn(state, loose[loose.length - 1].key)
 
   const plate = newPlate()

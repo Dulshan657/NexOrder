@@ -91,7 +91,7 @@ export interface MismatchRow {
 export async function recordLabelMismatches(
   admin: SupabaseClient,
   rows: readonly MismatchRow[],
-  opts: { alreadyInserted?: readonly number[] } = {},
+  opts: { alreadyInserted?: readonly number[]; notHeld?: boolean } = {},
 ): Promise<number[]> {
   if (rows.length === 0) return []
   let ids = [...(opts.alreadyInserted ?? [])]
@@ -121,7 +121,7 @@ export async function recordLabelMismatches(
       scannedCode: r.scannedCode,
       labelSku: skuOf.get(r.labelProductId) ?? String(r.labelProductId),
       realSku: skuOf.get(r.realProductId) ?? String(r.realProductId),
-    }),
+    }) + (opts.notHeld ? ' It is NOT yet held: plan its putaway to a hold location.' : ''),
     target_roles: ['Admin', 'Manager'],
     user_id: null,
     metadata: { labelMismatchId: ids[i] ?? null, labelProductId: r.labelProductId, realProductId: r.realProductId },

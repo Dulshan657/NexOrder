@@ -15,6 +15,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { logAuditEvent } from '../_shared/audit.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -50,6 +51,15 @@ serve(async (req: Request) => {
     if (!data || (data as any[]).length === 0) {
       throw new EdgeFunctionError('CONFLICT', 'That mismatch is already resolved, or does not exist.')
     }
+    await logAuditEvent(admin, {
+      actorId: auth.userId,
+      actorRole: auth.role,
+      action: 'update',
+      resource: 'label_mismatch',
+      resourceId: String(parsed.data.id),
+      before: { status: 'open' },
+      after: { status: 'resolved' },
+    })
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

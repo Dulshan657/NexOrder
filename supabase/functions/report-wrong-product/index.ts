@@ -1,7 +1,7 @@
 // Edge Function: report-wrong-product (NX-0050)
 //
 // POST { recommendation_id, real_product_id, quantity, scanned_code? }
-//   -> { ok: true, mismatchId, heldTasks: [{ recommendationId, locationId }] }
+//   -> { ok: true, mismatchId, held, heldTasks: [{ recommendationId, locationId }] }
 //
 // "Not this product?" on a putaway Walk stop: the carton's label says the
 // task's product, but it holds another. In ONE transaction
@@ -13,6 +13,10 @@
 //
 // The decision is _shared/labelMismatch.ts planWrongProduct, asked here first so
 // a refusal reads in plain words; the transaction asks again under its lock.
+// The held putaway is planned as a DRY RUN before anything is written: if no
+// hold location can take the real product, nothing is recorded and the walker
+// is told. Should the real plan still fail after the record (a read failing in
+// between), the answer says held: false, and so do the floor and the bell.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -33,7 +37,7 @@ const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 const inputSchema = z.object({
   recommendation_id: z.number().int().positive(),
   real_product_id: z.number().int().positive(),
-  quantity: z.number(),
+  quantity: z.number().max(100_000),
   scanned_code: z.string().max(120).optional(),
 })
 
@@ -41,9 +45,11 @@ const PG_ERROR_CODES: ReadonlyArray<['NOT_FOUND' | 'CONFLICT' | 'INVALID_INPUT',
   ['NOT_FOUND', 'NOT_FOUND:'],
   ['CONFLICT', 'CONFLICT:'],
   ['INVALID_INPUT', 'INVALID_INPUT:'],
-  ['INVALID_INPUT', 'INVALID_QTY:'],
-  ['CONFLICT', 'INSUFFICIENT_STOCK:'],
 ]
+
+/** Stock-leg failures from inv_adjust_stock: the stock is not there to move. */
+const STOCK_GONE = ['ADJUSTMENT_BELOW_ALLOCATED:', 'INVALID_ADJUSTMENT:', 'INSUFFICIENT_STOCK:', 'inventory_balances_nonneg']
+export const STOCK_GONE_MESSAGE = 'That stock has been moved or reserved. Ask the desk.'
 
 function rpcError(message: string): EdgeFunctionError {
   for (const [code, prefix] of PG_ERROR_CODES) {
@@ -51,8 +57,12 @@ function rpcError(message: string): EdgeFunctionError {
       return new EdgeFunctionError(code, message.slice(message.indexOf(prefix) + prefix.length).trim())
     }
   }
-  return new EdgeFunctionError('INTERNAL', `Could not record it, try again. (${message})`)
+  console.error(`[report-wrong-product] transaction failed: ${message}`)
+  if (STOCK_GONE.some((m) => message.includes(m))) return new EdgeFunctionError('CONFLICT', STOCK_GONE_MESSAGE)
+  return new EdgeFunctionError('INTERNAL', 'Could not record it, try again.')
 }
+
+export const NO_HOLD_LOCATION = 'No hold location can take this. Ask the desk.'
 
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
@@ -76,7 +86,7 @@ serve(async (req: Request) => {
     })
 
     const { data: rec, error: recErr } = await admin.from('wie_putaway_recommendations')
-      .select('id, product_id, quantity, warehouse_id, handling_unit_id, status')
+      .select('id, product_id, quantity, warehouse_id, handling_unit_id, status, unit_load')
       .eq('id', recommendation_id).maybeSingle()
     if (recErr) throw new EdgeFunctionError('INTERNAL', 'Could not read that stop, try again.')
     if (!rec) throw new EdgeFunctionError('NOT_FOUND', `Putaway task ${recommendation_id} not found`)
@@ -86,16 +96,21 @@ serve(async (req: Request) => {
     }
 
     let plateProductIds: number[] = []
-    let huType: 'pallet' | 'carton' | undefined
     if (r.handling_unit_id != null) {
-      const [{ data: bal }, { data: hu }] = await Promise.all([
-        admin.from('inventory_balances').select('product_id')
-          .eq('handling_unit_id', r.handling_unit_id).gt('on_hand', 0),
-        admin.from('handling_units').select('hu_type').eq('id', r.handling_unit_id).maybeSingle(),
-      ])
+      const { data: bal } = await admin.from('inventory_balances').select('product_id')
+        .eq('handling_unit_id', r.handling_unit_id).gt('on_hand', 0)
       plateProductIds = ((bal ?? []) as any[]).map((b) => Number(b.product_id))
-      const t = (hu as any)?.hu_type
-      huType = t === 'pallet' || t === 'carton' ? t : undefined
+    }
+    // Planned the way the original line was: a unit load only if the planner
+    // treated it as one (unit_load), never from the plate's stored type, which
+    // defaults to 'pallet' for plates nobody declared.
+    const huType: 'pallet' | undefined = r.unit_load === true ? 'pallet' : undefined
+    const heldLine = {
+      product_id: real_product_id,
+      quantity,
+      hu_id: r.handling_unit_id ?? undefined,
+      hu_type: huType,
+      quarantine: true,
     }
 
     const plan = planWrongProduct({
@@ -108,6 +123,20 @@ serve(async (req: Request) => {
       plateProductIds,
     })
     if (!plan.ok) throw new EdgeFunctionError(plan.code, plan.message)
+
+    // Can a hold location take the real product? Asked before anything is written.
+    let dry
+    try {
+      dry = await generatePutawayTasks(admin, {
+        warehouseId: r.warehouse_id, lines: [heldLine], actorId: auth.userId, dryRun: true,
+      })
+    } catch (e) {
+      console.error('[report-wrong-product] held putaway dry run failed', e)
+      throw new EdgeFunctionError('INTERNAL', 'Could not check where to hold it, try again.')
+    }
+    if (dry.mode !== 'engine' || dry.recommendations.some((x) => x.recommendedLocationId == null)) {
+      throw new EdgeFunctionError('CONFLICT', NO_HOLD_LOCATION)
+    }
 
     const { data: tx, error: txErr } = await admin.rpc('wie_report_wrong_product_tx', {
       p_rec_id: recommendation_id,
@@ -124,13 +153,7 @@ serve(async (req: Request) => {
     try {
       const planned = await generatePutawayTasks(admin, {
         warehouseId: r.warehouse_id,
-        lines: [{
-          product_id: real_product_id,
-          quantity,
-          hu_id: r.handling_unit_id ?? undefined,
-          hu_type: huType,
-          quarantine: true,
-        }],
+        lines: [heldLine],
         actorId: auth.userId,
         goodsReceiptId: t.goods_receipt_id ?? undefined,
       })
@@ -140,10 +163,11 @@ serve(async (req: Request) => {
         }))
       }
     } catch (e) {
-      // The stock is already recorded and held at the warehouse root; the desk
-      // can plan its putaway. Say so rather than undo a correct record.
+      // The stock record is right and stays; the answer, the floor and the bell
+      // all say it is NOT yet held, so the desk plans its putaway.
       console.error('[report-wrong-product] held putaway could not be planned', e)
     }
+    const held = heldTasks.length > 0 && heldTasks.every((x) => x.locationId != null)
 
     await recordLabelMismatches(admin, [{
       scannedCode: t.scanned_code,
@@ -154,7 +178,7 @@ serve(async (req: Request) => {
       goodsReceiptId: t.goods_receipt_id ?? null,
       putawayRecId: r.id,
       reportedBy: auth.userId,
-    }], { alreadyInserted: [Number(t.mismatch_id)] })
+    }], { alreadyInserted: [Number(t.mismatch_id)], notHeld: !held })
 
     await logAuditEvent(admin, {
       actorId: auth.userId,
@@ -162,11 +186,15 @@ serve(async (req: Request) => {
       action: 'update',
       resource: 'putaway_task',
       resourceId: String(recommendation_id),
-      after: { label_mismatch_id: t.mismatch_id, real_product_id, quantity, held_tasks: heldTasks },
+      before: { product_id: r.product_id, quantity: Number(r.quantity), status: r.status },
+      after: {
+        label_mismatch_id: t.mismatch_id, closed_task_ids: t.closed_task_ids, real_product_id, quantity,
+        held, held_tasks: heldTasks,
+      },
       metadata: { reason: 'label mismatch' },
     })
 
-    return new Response(JSON.stringify({ ok: true, mismatchId: Number(t.mismatch_id), heldTasks }), {
+    return new Response(JSON.stringify({ ok: true, mismatchId: Number(t.mismatch_id), held, heldTasks }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

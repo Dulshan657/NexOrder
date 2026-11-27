@@ -135,6 +135,59 @@ describe('NX-0050 label mismatch (live RPCs, rollback-isolated)', () => {
     })
   })
 
+  it('a lot-received carton comes off under its own batch', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const label = await newProduct(client, w.token, '-L')
+      const real = await newProduct(client, w.token, '-R')
+      const batch = await client.query<{ id: number }>(
+        `INSERT INTO public.batches (product_id, lot_code, expiry_date) VALUES ($1, $2, '2030-01-01') RETURNING id`,
+        [label.id, `LOT-${w.token}`])
+      const h = await client.query<{ id: number }>(
+        `INSERT INTO public.handling_units (hu_type, warehouse_id, location_id) VALUES ('carton', $1, $1) RETURNING id`,
+        [w.warehouseId])
+      await client.query(
+        `SELECT public.inv_apply_leg($1, $2, $3, $4, 0, 'receipt', NULL, 'test', NULL, NULL, NULL, $5)`,
+        [label.id, w.warehouseId, batch.rows[0].id, 12, h.rows[0].id])
+      const id = await task(client, w, label.id, 12, h.rows[0].id)
+      await client.query(report, [id, real.id, 12, 'X'])
+      expect(await onHand(client, label.id, w.warehouseId)).toBe(0)
+      expect(await onHand(client, real.id, w.warehouseId)).toBe(12)
+    })
+  })
+
+  it('every open task of the product on that plate is closed together, so none keeps phantom stock', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const label = await newProduct(client, w.token, '-L')
+      const real = await newProduct(client, w.token, '-R')
+      const hu = await plate(client, w, [[label.id, 100]])
+      // One line split into a home part and an overflow part: two tasks, one plate.
+      const a = await task(client, w, label.id, 60, hu)
+      const b = await task(client, w, label.id, 40, hu, 'suggested')
+      const out = await client.query<{ r: { closed_task_ids: number[] } }>(report, [a, real.id, 100, 'X'])
+      expect(out.rows[0].r.closed_task_ids.map(Number).sort((x, y) => x - y)).toEqual([a, b].sort((x, y) => x - y))
+      const st = await client.query<{ status: string }>(
+        'SELECT status FROM public.wie_putaway_recommendations WHERE id = ANY($1::bigint[]) ORDER BY id', [[a, b]])
+      expect(st.rows.map((x) => x.status)).toEqual(['written_off', 'written_off'])
+      expect(await onHand(client, label.id, w.warehouseId)).toBe(0)
+      expect(await onHand(client, real.id, w.warehouseId)).toBe(100)
+    })
+  })
+
+  it('refuses when the stock is no longer there to re-record, and writes nothing', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const label = await newProduct(client, w.token, '-L')
+      const real = await newProduct(client, w.token, '-R')
+      const hu = await plate(client, w, [[label.id, 5]])
+      const id = await task(client, w, label.id, 8, hu) // the task promises more than the plate holds
+      await expectRaise(client, report, [id, real.id, 8, 'X'], /CONFLICT: That stock has been moved or reserved/)
+      expect(await onHand(client, label.id, w.warehouseId)).toBe(5)
+      expect(await onHand(client, real.id, w.warehouseId)).toBe(0)
+    })
+  })
+
   it('refuses the same product, a non-whole quantity, a closed stop and a mixed plate', async () => {
     await withRollbackTx(async (client) => {
       const w = await seed(client)

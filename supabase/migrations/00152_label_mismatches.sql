@@ -19,15 +19,22 @@
 --    resolve-label-mismatch write it with the service role.
 --
 -- 2. wie_report_wrong_product_tx(rec, real product, qty, scanned code, actor):
---    the Walk side, in ONE transaction, under the task's row lock:
---      * the task must be open (suggested / assigned) and not a mixed plate;
---      * the real product must differ, and the quantity must be a positive
---        whole number;
---      * it takes the task's quantity of the label product off the warehouse
---        root and puts the counted quantity of the real product on, on the
---        same plate (inv_adjust_stock, as wie_resolve_short_putaway_tx does);
---      * it closes the task as written_off, with the reason 'label mismatch';
---      * it writes the label_mismatches row.
+--    the Walk side, in ONE transaction, under row locks:
+--      * the task must be open (suggested / assigned) and not on a mixed
+--        plate; the real product must differ, and the quantity must be a
+--        positive whole number;
+--      * every OPEN task for the same plate and label product (a line split
+--        into a home part and an overflow part is several tasks on one plate)
+--        is closed together as written_off, reason 'label mismatch', so no
+--        task keeps pointing at stock that is no longer there;
+--      * the label product's stock on that plate at the warehouse root comes
+--        off row by row, each under its own batch (a lot-received carton is
+--        stored under its batch, so one NULL-batch adjustment would miss it),
+--        up to the closed tasks' total. If less is there, the stock has been
+--        moved or reserved: CONFLICT, nothing written;
+--      * the counted quantity of the real product goes on, on the same plate,
+--        with no batch: the label's lot belonged to the other product;
+--      * the label_mismatches row is written.
 --    The held putaway task for the real product is planned afterwards by
 --    report-wrong-product, through generatePutawayTasks (quarantine).
 --
@@ -90,6 +97,11 @@ DECLARE
     v_others   INT;
     v_code     TEXT;
     v_id       BIGINT;
+    v_ids      BIGINT[];
+    v_total    NUMERIC;
+    v_left     NUMERIC;
+    v_take     NUMERIC;
+    v_bal      RECORD;
 BEGIN
     SELECT * INTO v_rec FROM public.wie_putaway_recommendations
     WHERE id = p_rec_id FOR UPDATE;
@@ -119,6 +131,16 @@ BEGIN
         IF v_others > 0 THEN
             RAISE EXCEPTION 'CONFLICT: Break this pallet down first.' USING ERRCODE = 'P0001';
         END IF;
+        -- Every open task of this product on this plate, locked, closed together.
+        SELECT array_agg(r.id ORDER BY r.id), COALESCE(sum(r.quantity), 0) INTO v_ids, v_total
+        FROM (SELECT id, quantity FROM public.wie_putaway_recommendations
+               WHERE handling_unit_id = v_rec.handling_unit_id
+                 AND product_id = v_rec.product_id
+                 AND status IN ('suggested', 'assigned')
+               ORDER BY id FOR UPDATE) r;
+    ELSE
+        v_ids := ARRAY[v_rec.id];
+        v_total := v_rec.quantity;
     END IF;
 
     v_code := NULLIF(btrim(COALESCE(p_scanned_code, '')), '');
@@ -127,10 +149,30 @@ BEGIN
         FROM public.products WHERE id = v_rec.product_id;
     END IF;
 
-    PERFORM public.inv_adjust_stock(
-        v_rec.product_id, v_rec.warehouse_id, -v_rec.quantity,
-        'label mismatch: not this product', p_actor,
-        NULL, 'adjustment', v_rec.handling_unit_id);
+    -- The label product off the root, batch by batch, up to the tasks' total.
+    v_left := v_total;
+    FOR v_bal IN
+        SELECT b.id, b.batch_id, b.on_hand - b.allocated AS free
+        FROM public.inventory_balances b
+        WHERE b.product_id = v_rec.product_id
+          AND b.location_id = v_rec.warehouse_id
+          AND b.handling_unit_id IS NOT DISTINCT FROM v_rec.handling_unit_id
+          AND b.on_hand - b.allocated > 0
+        ORDER BY b.id
+        FOR UPDATE
+    LOOP
+        EXIT WHEN v_left <= 0;
+        v_take := LEAST(v_left, v_bal.free);
+        PERFORM public.inv_adjust_stock(
+            v_rec.product_id, v_rec.warehouse_id, -v_take,
+            'label mismatch: not this product', p_actor,
+            v_bal.batch_id, 'adjustment', v_rec.handling_unit_id);
+        v_left := v_left - v_take;
+    END LOOP;
+    IF v_left > 0 THEN
+        RAISE EXCEPTION 'CONFLICT: That stock has been moved or reserved. Ask the desk.' USING ERRCODE = 'P0001';
+    END IF;
+
     PERFORM public.inv_adjust_stock(
         p_real_product_id, v_rec.warehouse_id, p_quantity,
         'label mismatch: recorded as the real product', p_actor,
@@ -139,7 +181,7 @@ BEGIN
     UPDATE public.wie_putaway_recommendations
     SET status = 'written_off', resolution_reason = 'label mismatch',
         decided_at = now(), actor_id = p_actor
-    WHERE id = p_rec_id;
+    WHERE id = ANY (v_ids);
 
     INSERT INTO public.label_mismatches
         (scanned_code, label_product_id, real_product_id, quantity, warehouse_id,
@@ -151,6 +193,7 @@ BEGIN
 
     RETURN jsonb_build_object(
         'mismatch_id', v_id,
+        'closed_task_ids', to_jsonb(v_ids),
         'warehouse_id', v_rec.warehouse_id,
         'handling_unit_id', v_rec.handling_unit_id,
         'goods_receipt_id', v_rec.goods_receipt_id,

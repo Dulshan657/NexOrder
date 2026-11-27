@@ -151,3 +151,27 @@ describe('scanUomFor', () => {
     expect(scanUomFor(palletOnly)).toBeNull()
   })
 })
+
+// NX-0050: a line swapped by "Not this product?" is a held mismatch. A
+// correctly labelled carton of the real product scanned afterwards must start
+// its own (ordinary) line, never be counted onto the held one.
+describe('stageProduct and a label-mismatch line (NX-0050)', () => {
+  it('a rescan of the real product starts a new line instead of counting on the mismatch line', () => {
+    const first = scan(emptyStaging(), plain)
+    const swapped: StagingState = {
+      ...first,
+      lines: first.lines.map((l) => ({
+        ...l, quarantine: true,
+        labelMismatch: {
+          labelProductId: 1, labelSku: 'SKU-1', scannedCode: '9999',
+          previous: { productId: 1, quantity: '1', uomId: null, quarantine: false },
+        },
+      })),
+    }
+    const after = scan(swapped, plain)
+    expect(after.lines).toHaveLength(2)
+    expect(after.lines[0].quantity).toBe(swapped.lines[0].quantity)
+    expect(after.lines[1].labelMismatch).toBeUndefined()
+    expect(after.lines[1].quarantine).toBe(false)
+  })
+})

@@ -55,6 +55,8 @@ export type MixedPalletCardProps = {
   requirementFor?: (productId: number | null) => LineRequirement | undefined
   /** The line a scan just touched, so it can flash. */
   highlightedKey?: string | null
+  /** NX-0050: the catalogue a line's "Not this product?" may name. */
+  realProductPool?: readonly Product[]
 }
 
 export function MixedPalletCard({
@@ -72,6 +74,7 @@ export function MixedPalletCard({
   onUpdateLine,
   onRemoveLine,
   requirementFor,
+  realProductPool,
   highlightedKey = null,
 }: MixedPalletCardProps) {
   return (
@@ -151,6 +154,7 @@ export function MixedPalletCard({
                 onSetPlateType={() => {}}
                 requirement={requirementFor?.(line.productId)}
                 highlighted={highlightedKey === line.key}
+                realProductPool={realProductPool}
               />
             </React.Fragment>
           ))}

@@ -16,7 +16,8 @@ import { toProduct } from '@/lib/adapters'
 interface WrongProductSheetProps {
   row: PendingPutawayRow
   onClose: () => void
-  onRecorded: (realSku: string) => void
+  /** held = a held putaway was planned; false = recorded, but the desk must plan it. */
+  onRecorded: (realSku: string, held: boolean) => void
 }
 
 export function WrongProductSheet({ row, onClose, onRecorded }: WrongProductSheetProps) {
@@ -37,8 +38,8 @@ export function WrongProductSheet({ row, onClose, onRecorded }: WrongProductShee
     if (!real || !ready) return
     setError(null)
     try {
-      await report.mutateAsync({ recommendationId: row.id, realProductId: real.id, quantity: count })
-      onRecorded(real.sku)
+      const result = await report.mutateAsync({ recommendationId: row.id, realProductId: real.id, quantity: count })
+      onRecorded(real.sku, result?.held !== false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not record it, try again.')
     }

@@ -145,6 +145,12 @@ export interface ReceiveLineCardProps {
    */
   productPool?: readonly Product[]
   onChooseProduct?: (product: Product) => void
+  /**
+   * NX-0050: what "Not this product?" may name -- the whole catalogue, since
+   * the real carton need not be linked to this supplier. Falls back to
+   * productPool when absent.
+   */
+  realProductPool?: readonly Product[]
 }
 
 export function ReceiveLineCard({
@@ -162,6 +168,7 @@ export function ReceiveLineCard({
   highlighted = false,
   productPool,
   onChooseProduct,
+  realProductPool,
 }: ReceiveLineCardProps) {
   // Local, and keyed by the line's own identity through React's `key`. Nothing
   // above needs to know which lines are open, and lifting it would put a piece
@@ -299,11 +306,11 @@ export function ReceiveLineCard({
             {`Label says ${line.labelMismatch.labelSku} — recorded as ${product.sku}, held`}{' '}
             <button type="button" className="underline touch-target-y" onClick={undoSwap}>Undo</button>
           </p>
-        ) : product && productPool && productPool.length > 1 ? (
+        ) : product && (realProductPool ?? productPool ?? []).length > 1 ? (
           choosingReal ? (
             <div className="mt-1">
               <LineProductPicker
-                pool={productPool.filter((p) => p.id !== product.id)}
+                pool={(realProductPool ?? productPool ?? []).filter((p) => p.id !== product.id)}
                 supplierId={supplierId}
                 onChoose={swapToReal}
                 label="What is really in the carton"
@@ -522,6 +529,9 @@ export function ReceiveLineCard({
                 type="checkbox"
                 aria-label={`Quarantine line ${line.key}`}
                 checked={line.quarantine}
+                // A "Not this product?" line is always held (NX-0050): the
+                // server holds it whatever is sent, so the box says so.
+                disabled={!!line.labelMismatch}
                 onChange={(e) => onUpdate({ quarantine: e.target.checked })}
                 className="h-4 w-4"
               />

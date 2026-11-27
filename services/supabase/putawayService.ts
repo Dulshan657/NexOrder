@@ -217,10 +217,11 @@ export async function reportWrongProduct(input: {
   realProductId: number
   quantity: number
   scannedCode?: string
-}): Promise<{ mismatchId: number; heldTasks: Array<{ recommendationId: number; locationId: number | null }> }> {
+}): Promise<{ mismatchId: number; held: boolean; heldTasks: Array<{ recommendationId: number; locationId: number | null }> }> {
   const { data, error } = await supabase.functions.invoke<{
     ok: true
     mismatchId: number
+    held: boolean
     heldTasks: Array<{ recommendationId: number; locationId: number | null }>
   }>('report-wrong-product', {
     body: {
@@ -231,7 +232,7 @@ export async function reportWrongProduct(input: {
     },
   })
   if (error) throw new Error(await extractFunctionErrorMessage(error, 'Could not record it, try again.'))
-  return { mismatchId: Number(data?.mismatchId ?? 0), heldTasks: data?.heldTasks ?? [] }
+  return { mismatchId: Number(data?.mismatchId ?? 0), held: data?.held === true, heldTasks: data?.heldTasks ?? [] }
 }
 
 /** NX-0050: an Admin or Manager marks a label mismatch as dealt with. */

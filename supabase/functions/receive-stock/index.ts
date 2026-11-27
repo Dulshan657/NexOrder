@@ -269,9 +269,13 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
     }
     const { receipt, lines, plates } = parsed.data
-    // NX-0050: a label mismatch names a DIFFERENT product from the line's.
-    if (lines.some((l) => l.label_mismatch && l.label_mismatch.label_product_id === l.product_id)) {
+    // NX-0050: a label mismatch names a DIFFERENT, real product and a code.
+    const mismatchLines = lines.filter((l) => l.label_mismatch)
+    if (mismatchLines.some((l) => l.label_mismatch!.label_product_id === l.product_id)) {
       throw new EdgeFunctionError('INVALID_INPUT', 'A label mismatch must name a different product from the line.')
+    }
+    if (mismatchLines.some((l) => l.label_mismatch!.scanned_code.trim().length === 0)) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'A label mismatch needs the code on the label.')
     }
 
     const admin = createClient(
@@ -305,6 +309,16 @@ serve(async (req: Request) => {
       { role: auth.role, homeWarehouseId: auth.profile.home_warehouse_id },
       activeWarehouseCount ?? 0,
     )
+
+    // NX-0050: a label mismatch's label product must exist.
+    if (mismatchLines.length > 0) {
+      const ids = [...new Set(mismatchLines.map((l) => l.label_mismatch!.label_product_id))]
+      const { data: found, error: fErr } = await admin.from('products').select('id').in('id', ids)
+      if (fErr) throw new EdgeFunctionError('INTERNAL', 'Could not check the label product, try again.')
+      if ((found ?? []).length !== ids.length) {
+        throw new EdgeFunctionError('INVALID_INPUT', 'A label mismatch names a product that does not exist.')
+      }
+    }
 
     // Convert UOM quantities to base units (the RPC + ledger only speak base).
     const baseLines = await toBaseLines(admin, lines)
@@ -415,13 +429,15 @@ serve(async (req: Request) => {
     // NX-0050: record each "Not this product?" line and tell the desk. After
     // the receipt, because the receipt id names it; a failure here is logged
     // and does not undo a receipt whose held stock is already right.
+    // In base units, as the stock was received (`baseLines` is index-aligned).
     const mismatches = lines
-      .filter((l) => l.label_mismatch)
-      .map((l) => ({
-        scannedCode: l.label_mismatch!.scanned_code,
+      .map((l, i) => ({ l, base: Number((baseLines[i] as { quantity?: number }).quantity ?? l.quantity) }))
+      .filter(({ l }) => l.label_mismatch)
+      .map(({ l, base }) => ({
+        scannedCode: l.label_mismatch!.scanned_code.trim(),
         labelProductId: l.label_mismatch!.label_product_id,
         realProductId: l.product_id,
-        quantity: l.quantity,
+        quantity: base,
         warehouseId: (destLocationId ?? locationId) as number,
         goodsReceiptId: ((result as any)?.receipt_id as number | undefined) ?? null,
         putawayRecId: null,

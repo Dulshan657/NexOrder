@@ -110,6 +110,7 @@ export const LOCKED_TABLES = [
   { table: 'slotting_rules', fn: 'mutate-slotting-rule', migration: '00115' },
   { table: 'slotting_rule_blocks', fn: 'mutate-slotting-rule', migration: '00115' },
   { table: 'wie_offhome_tasks', fn: 'mutate-offhome-task', migration: '00119' },
+  { table: 'label_mismatches', fn: 'receive-stock / report-wrong-product / resolve-label-mismatch', migration: '00152' },
   // HoReCa QR reorder (00129). All four are created locked: REVOKE ALL from
   // anon/authenticated, then only SELECT is given back where listed. This file
   // models writes only, so the READ boundaries that matter most are NOT checked

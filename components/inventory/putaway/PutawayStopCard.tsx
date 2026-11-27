@@ -698,9 +698,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         <WrongProductSheet
           row={row}
           onClose={() => setWrongProduct(false)}
-          onRecorded={(realSku) => {
+          onRecorded={(realSku, held) => {
             setWrongProduct(false)
-            addToast(`Recorded as ${realSku} and held. The desk will check the barcode.`, 'success')
+            if (held) addToast(`Recorded as ${realSku} and held. The desk will check the barcode.`, 'success')
+            else addToast(`Recorded as ${realSku}, but NOT yet held. Tell the desk.`, 'error')
             reset()
             onDone()
           }}
