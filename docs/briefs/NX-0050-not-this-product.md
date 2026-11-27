@@ -6,21 +6,84 @@
   "base": "1a3416bb2bba969166d2f61c140a12993c1e486f",
   "approved": "2026-11-27 owner: \"go\"",
   "acceptance": [
-    { "id": "A1", "check": "On the receive screen, each staged line offers 'Not this product?'. Choosing the real product from the product search swaps the line to it, ticks 'Hold this line back' and marks the line as a label mismatch, showing 'Label says {SKU} — recorded as {real SKU}, held'. The quantity is re-entered in the real product's units. 'Undo' puts the line back as it was." },
-    { "id": "A2", "check": "receive-stock accepts a line's label_mismatch { scanned_code, label_product_id }. The line is received as the real product, held (quarantine: its putaway goes to a hold location), and one label_mismatches row is written with the scanned code, the label product, the real product, the quantity, the user, the receipt and status 'open'. A label_product_id equal to the line's product is refused with INVALID_INPUT.", "manual": "npm run test:integration -- labelMismatch (receive-stock over HTTP, made-up products) on dev" },
-    { "id": "A3", "check": "On a putaway Walk stop, 'Not this product?' asks for the real product and how many there are, then report-wrong-product, in ONE transaction: takes the task's quantity of the label product off the warehouse root (on its plate when it has one), adds the counted quantity of the real product there held, closes the task as written_off, plans a held putaway task for the real product to a hold location, and writes one label_mismatches row. The stop leaves the Walk; the held line appears on it. A mixed plate is refused: 'Break this pallet down first.'", "manual": "npm run test:integration -- labelMismatch (wie_report_wrong_product_tx rollback-isolated, and report-wrong-product over HTTP) on dev" },
-    { "id": "A4", "check": "report-wrong-product allows Admin, Manager and Warehouse (Warehouse only at their own warehouse), refuses a task that is not open with CONFLICT, the same product with INVALID_INPUT, and a quantity that is not a positive whole number with INVALID_INPUT." },
-    { "id": "A5", "check": "Every new mismatch raises a notification to Admin and Manager: 'Label mismatch: {scanned code} scanned as {label SKU}, but the carton was {real SKU}. Check the barcode.' Opening it shows the product to fix. The mismatch can be marked resolved by an Admin or Manager.", "manual": "npm run test:integration -- labelMismatch on dev; the bell in a browser" },
-    { "id": "A6", "check": "label_mismatches has RLS: Admin and Manager may read and resolve; Warehouse may read rows they reported; nobody writes except through the functions (service role). check:grants passes.", "manual": "npm run check:grants:dev after migrate:dev" },
-    { "id": "A7", "check": "Migration applied and changed functions deployed to dev.", "manual": "npm run migrate:dev; Supabase CLI deploy of report-wrong-product, receive-stock and the functions bundling a changed shared module, with the owner's consent" }
+    {
+      "id": "A1",
+      "check": "On the receive screen, each staged line offers 'Not this product?'. Choosing the real product from the product search swaps the line to it, ticks 'Hold this line back' and marks the line as a label mismatch, showing 'Label says {SKU} — recorded as {real SKU}, held'. The quantity is re-entered in the real product's units. 'Undo' puts the line back as it was."
+    },
+    {
+      "id": "A2",
+      "check": "receive-stock accepts a line's label_mismatch { scanned_code, label_product_id }. The line is received as the real product, held (quarantine: its putaway goes to a hold location), and one label_mismatches row is written with the scanned code, the label product, the real product, the quantity, the user, the receipt and status 'open'. A label_product_id equal to the line's product is refused with INVALID_INPUT.",
+      "manual": "npm run test:integration -- labelMismatch (receive-stock over HTTP, made-up products) on dev"
+    },
+    {
+      "id": "A3",
+      "check": "On a putaway Walk stop, 'Not this product?' asks for the real product and how many there are. report-wrong-product first checks, as a dry run, that a hold location can take the real product (else CONFLICT 'No hold location can take this. Ask the desk.' and nothing is written), then in ONE transaction closes every open task of the label product on that plate as written_off, takes their total of the label product off the warehouse root batch by batch (CONFLICT 'That stock has been moved or reserved. Ask the desk.' if it is not all there), adds the counted quantity of the real product there, and writes one label_mismatches row; then plans a held putaway task for the real product. If that last plan fails, the answer, the toast and the notice all say it is NOT yet held. A mixed plate is refused: 'Break this pallet down first.'",
+      "manual": "npm run test:integration -- labelMismatch (wie_report_wrong_product_tx rollback-isolated, and report-wrong-product over HTTP) on dev"
+    },
+    {
+      "id": "A4",
+      "check": "report-wrong-product allows Admin, Manager and Warehouse (Warehouse only at their own warehouse), refuses a task that is not open with CONFLICT, the same product with INVALID_INPUT, and a quantity that is not a positive whole number with INVALID_INPUT."
+    },
+    {
+      "id": "A5",
+      "check": "Every new mismatch raises a notification to Admin and Manager: 'Label mismatch: {scanned code} scanned as {label SKU}, but the carton was {real SKU}. Check the barcode.' Reading it does not resolve it; a separate 'Mark resolved' (Admin or Manager) does, and stays offered until the resolve succeeds.",
+      "manual": "npm run test:integration -- labelMismatch on dev; the bell in a browser"
+    },
+    {
+      "id": "A6",
+      "check": "label_mismatches has RLS: Admin and Manager may read every row; any user may read the rows they reported; nobody writes except through the functions (service role). It is listed in config/lockedTables.mjs and check:grants passes.",
+      "manual": "npm run check:grants:dev after migrate:dev"
+    },
+    {
+      "id": "A7",
+      "check": "Migration applied and changed functions deployed to dev.",
+      "manual": "npm run migrate:dev; Supabase CLI deploy of report-wrong-product, receive-stock and the functions bundling a changed shared module, with the owner's consent"
+    }
   ],
   "failFirst": [
-    { "file": "__tests__/labelMismatch.test.ts", "test": "planWrongProduct > takes the label product off and puts the real product on, at the warehouse root", "proves": ["A3"] },
-    { "file": "__tests__/labelMismatch.test.ts", "test": "planWrongProduct > refuses the same product, a non-whole or non-positive quantity, and a mixed plate", "proves": ["A3", "A4"] },
-    { "file": "__tests__/labelMismatch.test.ts", "test": "mismatchNotice > names the scanned code, both products and what to do", "proves": ["A5"] },
-    { "file": "__tests__/receiveLineWrongProduct.test.tsx", "test": "ReceiveLineCard > Not this product? swaps the line to the chosen product, holds it and says so", "proves": ["A1"] },
-    { "file": "__tests__/receiveLineWrongProduct.test.tsx", "test": "ReceiveLineCard > Undo puts the line back as it was", "proves": ["A1"] },
-    { "file": "__tests__/putawayStopCardWrongProduct.test.tsx", "test": "PutawayStopCard > Not this product? reports the real product and the counted quantity", "proves": ["A3"] }
+    {
+      "file": "__tests__/labelMismatch.test.ts",
+      "test": "planWrongProduct > takes the label product off and puts the real product on, at the warehouse root",
+      "proves": [
+        "A3"
+      ]
+    },
+    {
+      "file": "__tests__/labelMismatch.test.ts",
+      "test": "planWrongProduct > refuses the same product, a non-whole or non-positive quantity, and a mixed plate",
+      "proves": [
+        "A3",
+        "A4"
+      ]
+    },
+    {
+      "file": "__tests__/labelMismatch.test.ts",
+      "test": "mismatchNotice > names the scanned code, both products and what to do",
+      "proves": [
+        "A5"
+      ]
+    },
+    {
+      "file": "__tests__/receiveLineWrongProduct.test.tsx",
+      "test": "ReceiveLineCard > Not this product? swaps the line to the chosen product, holds it and says so",
+      "proves": [
+        "A1"
+      ]
+    },
+    {
+      "file": "__tests__/receiveLineWrongProduct.test.tsx",
+      "test": "ReceiveLineCard > Undo puts the line back as it was",
+      "proves": [
+        "A1"
+      ]
+    },
+    {
+      "file": "__tests__/putawayStopCardWrongProduct.test.tsx",
+      "test": "PutawayStopCard > Not this product? reports the real product and the counted quantity",
+      "proves": [
+        "A3"
+      ]
+    }
   ],
   "allow": []
 }
@@ -42,7 +105,7 @@ A carton whose label (barcode) says one product but holds another — say a chil
 - **UI:**
   - `ReceiveLineCard`: "Not this product?" opens the existing product search; the line is swapped and held, with "Undo".
   - `PutawayStopCard`: "Not this product?" opens a sheet with product search and quantity, then sends `report-wrong-product`.
-  - Notifications: a `label_mismatch` item in `NotificationCenter` that links to the product, plus "Mark resolved".
+  - Notifications: a `label_mismatch` notice in `NotificationCenter` naming both SKUs, with a separate "Mark resolved" button.
 - **Help:** a "The carton isn't what the label says" row on the "Something went wrong" page.
 
 ## Out of scope
