@@ -120,8 +120,9 @@ async function task(
     `INSERT INTO public.wie_putaway_recommendations
        (warehouse_id, layout_id, product_id, quantity, recommended_location_id, assigned_location_id,
         explanation, engine_version, status, suggestion_source, handling_unit_id)
-     VALUES ($1, $2, $3, $4, $5, CASE WHEN $8 = 'assigned' THEN $5 END, '{}'::jsonb, 'test', $8, $7, $6) RETURNING id`,
-    [w.warehouseId, w.layoutId, o.productId ?? w.productId, qty, binId, o.huId ?? null, o.source ?? 'engine', o.status ?? 'suggested'],
+     VALUES ($1, $2, $3, $4, $5, $9, '{}'::jsonb, 'test', $8, $7, $6) RETURNING id`,
+    [w.warehouseId, w.layoutId, o.productId ?? w.productId, qty, binId, o.huId ?? null, o.source ?? 'engine',
+      o.status ?? 'suggested', o.status === 'assigned' ? binId : null],
   )
   return r.rows[0].id
 }
@@ -314,7 +315,7 @@ describe('NX-0049 one product per location (live RPCs, rollback-isolated)', () =
       const r = await client.query<{ o: Array<{ location_id: number; product_id: number; rec_id: number | null }> }>(
         'SELECT public.wie_location_occupants($1) AS o', [w.warehouseId])
       const rows = r.rows[0].o.map((x) => [x.location_id, x.product_id, x.rec_id === null ? null : Number(x.rec_id)])
-      expect(rows).toEqual(expect.arrayContaining([[w.x, b.id, null], [w.y, w.productId, id]]))
+      expect(rows).toEqual(expect.arrayContaining([[w.x, b.id, null], [w.y, w.productId, Number(id)]]))
       // Stock still at the warehouse root (not yet put away) is not "in" a location.
       expect(rows.some(([loc]) => loc === w.warehouseId)).toBe(false)
     })

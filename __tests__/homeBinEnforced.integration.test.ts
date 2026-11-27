@@ -819,8 +819,12 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
         const row = (await factsRows(client, s.warehouseId)).find((r) => r.product_id === productId)
         if (!row) throw new Error(`no facts row for product ${productId}`)
         const full = homeBinProblems(homeBinFactsFromRow(row, s.warehouseId)).some((p) => p.code === 'full')
+        // The home rule's own answer (NX-0049, mig 00151: wie_home_block is now
+        // wie_home_rule then the one-product-per-location rule). The two probes
+        // here are different products headed for the same location, which the
+        // location rule refuses by design; this test is about the home's room.
         const block = await client.query<{ b: string | null }>(
-          'SELECT public.wie_home_block($1, $2) AS b', [rec, s.other])
+          'SELECT public.wie_home_rule($1, $2) AS b', [rec, s.other])
         const allows = block.rows[0].b === null
         expect({ why, full, allows }).toEqual({ why, full: expectFull, allows: expectFull })
       }
