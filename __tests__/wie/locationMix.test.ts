@@ -76,7 +76,7 @@ describe('locationMixRefusal', () => {
     })).toContain('already holds')
   })
 
-  it("another product's open line assigned to the bin counts, the plate's own lines do not", () => {
+  it('an open line of another product counts, also one on the same mixed plate', () => {
     // An open line of another product already headed for the bin is an occupant
     // (the caller passes it in like stock). One on THIS line's own plate is the
     // same mixed pallet going to the same place, so it does not block.

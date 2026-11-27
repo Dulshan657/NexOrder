@@ -299,7 +299,13 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     }
   }
 
+  // NX-0049: the latest location check wins. A scan made while an earlier check
+  // is still out supersedes it, so a slow refusal can never land on a stop that
+  // a later scan already moved on to the count.
+  const checkSeq = useRef(0)
+
   const onBinScan = async (raw: string) => {
+    const seq = ++checkSeq.current
     const verdict = checkPutawayScan(context, { ...evidence, locationCode: raw }, row.quantity)
     if (verdict.ok === false) {
       setError(verdict.message)
@@ -368,6 +374,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       } catch (e) {
         console.warn('[PutawayStopCard] location check failed; the server checks again at Confirm', e)
       }
+      if (seq !== checkSeq.current) return
       if (refusal) {
         setError(refusal)
         setScannedBin('')

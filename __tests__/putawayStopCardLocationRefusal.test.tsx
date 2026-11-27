@@ -117,6 +117,23 @@ describe('PutawayStopCard', () => {
     await waitFor(() => expect(screen.getByText(/How much did you put away/)).toBeTruthy())
   })
 
+  it('a slow refusal for an earlier scan never lands after a later scan moved on', async () => {
+    let releaseSlow: (v: string) => void = () => {}
+    const slow = new Promise<string>((resolve) => { releaseSlow = resolve })
+    const check = vi.fn()
+      .mockImplementationOnce(() => slow)
+      .mockImplementationOnce(async () => null)
+    mount(check)
+    open()
+    scanBin(OTHER)
+    scanBin(HOME)
+    await waitFor(() => expect(screen.getByText(/How much did you put away/)).toBeTruthy())
+    releaseSlow(`${OTHER} already holds TST-OTHER (Other product). Put this in an empty location.`)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByText(/already holds TST-OTHER/)).toBeNull()
+    expect(screen.getByText(/How much did you put away/)).toBeTruthy()
+  })
+
   it('when the check itself fails the walker is not stopped (the server judges at Confirm)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mount(vi.fn(async () => { throw new Error('offline') }))

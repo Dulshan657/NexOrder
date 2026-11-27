@@ -228,18 +228,32 @@ describe('NX-0049 one product per location (live RPCs, rollback-isolated)', () =
     })
   })
 
-  it("another product's open line headed for a location counts; the line's own plate does not", async () => {
+  it("an earlier open line of another product claims a location; a later one does not", async () => {
     await withRollbackTx(async (client) => {
       const w = await seed(client)
       const b = await newProduct(client, w.token, '-B', 'OTHERCO')
       await task(client, w, 4, w.x, { productId: b.id, status: 'assigned' })
-      const id = await task(client, w, 4, w.x)
-      expect(await block(client, id, w.x)).toMatch(/already holds/)
+      const later = await task(client, w, 4, w.x)
+      expect(await block(client, later, w.x)).toMatch(/already holds/)
 
+      // The other way round: this line was first, so B's later line does not refuse it.
+      const first = await task(client, w, 4, w.y)
+      await task(client, w, 4, w.y, { productId: b.id, status: 'assigned' })
+      expect(await block(client, first, w.y)).toBeNull()
+    })
+  })
+
+  it('two products of one mixed pallet go to separate locations', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const b = await newProduct(client, w.token, '-B', 'OTHERCO')
       const mixed = await plate(client, w, [[w.productId, 4], [b.id, 4]])
       const ta = await task(client, w, 4, w.y, { huId: mixed })
-      await task(client, w, 4, w.y, { productId: b.id, huId: mixed, status: 'assigned' })
-      expect(await block(client, ta, w.y)).toBeNull()
+      const tb = await task(client, w, 4, w.y, { productId: b.id, huId: mixed })
+      await client.query(completeWithReason, [ta, w.y, 4])
+      expect(await onHand(client, w.productId, w.y)).toBe(4)
+      expect(await block(client, tb, w.y)).toMatch(/already holds/)
+      expect(await block(client, tb, w.x)).toBeNull()
     })
   })
 
@@ -274,6 +288,11 @@ describe('NX-0049 one product per location (live RPCs, rollback-isolated)', () =
       await client.query('UPDATE public.app_settings SET putaway_ignore_capacity = true WHERE id = 1')
       expect(await block(client, id, w.x)).toBe(`Put this in its home location TST-MIX-H-${w.token}.`)
       expect(await block(client, id, w.home)).toBeNull()
+
+      // A line the planner sent to overflow (the home failed a rule SQL cannot
+      // judge, or the line predates the switch) is confirmed where it was sent.
+      const overflow = await task(client, w, 4, w.x, { source: 'overflow' })
+      expect(await block(client, overflow, w.x)).toBeNull()
     })
   })
 
@@ -292,27 +311,28 @@ describe('NX-0049 one product per location (live RPCs, rollback-isolated)', () =
       const b = await newProduct(client, w.token, '-B', 'OTHERCO')
       await receive(client, b.id, w.x, 5)
       const id = await task(client, w, 4, w.y, { status: 'assigned' })
-      const r = await client.query<{ location_id: number; product_id: number; rec_id: string | null }>(
-        'SELECT location_id, product_id, rec_id FROM public.wie_location_occupants($1)', [w.warehouseId])
-      const rows = r.rows.map((x) => [x.location_id, x.product_id, x.rec_id === null ? null : Number(x.rec_id)])
+      const r = await client.query<{ o: Array<{ location_id: number; product_id: number; rec_id: number | null }> }>(
+        'SELECT public.wie_location_occupants($1) AS o', [w.warehouseId])
+      const rows = r.rows[0].o.map((x) => [x.location_id, x.product_id, x.rec_id === null ? null : Number(x.rec_id)])
       expect(rows).toEqual(expect.arrayContaining([[w.x, b.id, null], [w.y, w.productId, id]]))
       // Stock still at the warehouse root (not yet put away) is not "in" a location.
       expect(rows.some(([loc]) => loc === w.warehouseId)).toBe(false)
     })
   })
 
-  it('the four functions are service_role only, one overload each', async () => {
+  it('the new functions are service_role only, one overload each', async () => {
     await withRollbackTx(async (client) => {
       const r = await client.query<{ name: string; acl: string; definer: boolean }>(
         `SELECT p.proname AS name, p.proacl::text AS acl, p.prosecdef AS definer
            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
           WHERE n.nspname = 'public'
-            AND p.proname IN ('wie_home_block','wie_home_rule','wie_location_mix_block','wie_location_occupants')
+            AND p.proname IN ('wie_brand_key','wie_home_block','wie_home_rule','wie_location_mix_block','wie_location_occupants')
           ORDER BY 1`)
       expect(r.rows.map((x) => x.name)).toEqual(
-        ['wie_home_block', 'wie_home_rule', 'wie_location_mix_block', 'wie_location_occupants'])
+        ['wie_brand_key', 'wie_home_block', 'wie_home_rule', 'wie_location_mix_block', 'wie_location_occupants'])
       for (const row of r.rows) {
-        expect(row.definer).toBe(true)
+        // wie_brand_key is a plain IMMUTABLE helper, not SECURITY DEFINER.
+        expect(row.definer).toBe(row.name !== 'wie_brand_key')
         expect(row.acl).toContain('service_role=X')
         expect(row.acl).not.toMatch(/(^|[{,])=X|anon=|authenticated=/)
       }

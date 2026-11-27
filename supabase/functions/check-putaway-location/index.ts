@@ -66,13 +66,27 @@ serve(async (req: Request) => {
     }
 
     // locations.code is globally unique (mig 00027), as complete-putaway reads it.
+    // The code is a value, not a pattern: LIKE's metacharacters are escaped.
     const { data: loc, error: locError } = await admin.from('locations')
-      .select('id').ilike('code', code).maybeSingle()
+      .select('id, is_active').ilike('code', code.replace(/[\\%_]/g, (c) => '\\' + c)).maybeSingle()
     if (locError) {
       console.error('[check-putaway-location] location read failed', locError)
       throw new EdgeFunctionError('INTERNAL', CHECK_FAILED)
     }
     if (!loc) throw new EdgeFunctionError('NOT_FOUND', `No location has the code ${code}`)
+    // Only a location this line could go to is judged, so the answer never
+    // names what another site holds (same checks and words as complete-putaway).
+    if (!(loc as any).is_active) {
+      throw new EdgeFunctionError('CONFLICT', 'That location is no longer active — choose another')
+    }
+    const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: (loc as any).id })
+    if (rootErr) {
+      console.error('[check-putaway-location] warehouse resolution failed', rootErr)
+      throw new EdgeFunctionError('INTERNAL', CHECK_FAILED)
+    }
+    if (root !== (rec as any).warehouse_id) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'That location is not inside this warehouse')
+    }
 
     const { data, error } = await admin.rpc('wie_home_block', {
       p_rec_id: recommendationId,
