@@ -5,7 +5,7 @@
 //   * holds nothing, or
 //   * holds only this same product, or
 //   * is this product's home AND every other product in it is homed there too
-//     and carries the same (non-blank) brand -- the shared McCurrie homes.
+//     and carries the same (non-blank) brand -- a shared home of one brand.
 // Anything else is refused, for every role. A hold (quarantine) location is
 // never refused: held stock of many products waits there by design.
 //
