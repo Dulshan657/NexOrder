@@ -169,3 +169,22 @@ Today:
 - **The live Amadiya release and switching the flag on there** happen after merge, as owner actions.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `locationMixRefusal > …` (5 named tests) proven by absence (new module); dev SQL copy agrees in `npm run test:integration -- locationMix` (13/13) | Revised after review: no same-plate exemption; only earlier open lines claim a location |
+| A2 | claimed | `npm run test:integration -- locationMix` on dev, 00151 applied: complete, decide accept and assign refused with the same words; home rule first; hold bin exempt; stray-stock home not binding. break-down-putaway asks `wie_location_mix_block` per portion | break-down is covered in code, but no integration test drives it over HTTP |
+| A3 | claimed | `generatePutawayTasks — one product per location (NX-0049) > …` (5 tests, incl. one read before the first insert and failing closed); `wie_location_occupants` returns one JSONB value (integration) | |
+| A4 | claimed | `PutawayStopCard > a refused location is shown at the scan and the count step is not reached` and `… a slow refusal for an earlier scan never lands …` proven; `check-putaway-location` deployed to dev | |
+| A5 | claimed | `homeHeadroom > ignoring capacity, a home is never full`, `isFull > ignoring capacity, nothing is full`, `generatePutawayTasks — capacity ignored (NX-0049) > …` proven; integration: full home with the switch on gives "Put this in its home location …", and an overflow line is still confirmable | |
+| A6 | claimed | `mutate-app-settings schema > accepts putaway_ignore_capacity as a boolean` proven; integration: column default false; NX-0032/0033 suites green on dev with the switch off (homeBinEnforced 44/44, putawayStraightToWalk 42/42, putawayHomeFirst 11/11) | The toggle's Admin-only save was not exercised in a browser |
+| A7 | not-claimed | `tests/e2e/rack-levels/location-mix.spec.ts` written; not run | No dev Admin E2E login on this machine. The owner chose to verify on Amadiya after release instead, with real products, as part of the scenario screenshots |
+| A8 | claimed | `npm run migrate:dev` applied 00151; 12 functions deployed to dev (adjust-stock, break-down-putaway, check-putaway-location, complete-putaway, count-bin, explain-product-location, home-bin-choices, home-bin-health, mutate-app-settings, receive-stock, recommend-putaway, transfer-stock) | /version.json on dev is not claimed: the dev frontend was not redeployed from this branch |
+
+### Not claimed
+
+- The browser story (A7) and the Admin toggle in a browser: these move to the Amadiya walk after release.
+- Stock moves outside putaway (transfer, quarantine release, stocktake, adjustment, replenishment, off-home, reslot) are not checked by the location rule, as scoped.
+- With the switch on, operator rules that test `capacitySlots` see it as null (it reads as 0 in `rules.ts`), so a `capacitySlots lt N` rule matches every location. No such rule exists on Amadiya today, but this was not tested.
+- `stockAdjust.integration` has one failure on dev ("rejects a blank reason …"). It is in `inv_adjust_stock`, which this change does not touch, so it was already failing on dev.
+- Running the NX-0032 and NX-0033 integration files in parallel against one dev database can flip a few rollback-isolated cases, because their HTTP parts commit data. Run one at a time, they all pass.
