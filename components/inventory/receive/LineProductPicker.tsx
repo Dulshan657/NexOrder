@@ -20,9 +20,11 @@ interface LineProductPickerProps {
   pool: readonly Product[]
   supplierId: number | null
   onChoose: (product: Product) => void
+  /** The search field's accessible name (NX-0050 reuses the picker). */
+  label?: string
 }
 
-export function LineProductPicker({ pool, supplierId, onChoose }: LineProductPickerProps) {
+export function LineProductPicker({ pool, supplierId, onChoose, label = 'Product for new line' }: LineProductPickerProps) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
 
@@ -53,7 +55,7 @@ export function LineProductPicker({ pool, supplierId, onChoose }: LineProductPic
         onChange={(e) => { setQuery(e.target.value); setActive(0) }}
         onKeyDown={onKeyDown}
         placeholder="Type a product name or SKU…"
-        aria-label="Product for new line"
+        aria-label={label}
         // eslint-disable-next-line jsx-a11y/no-autofocus -- the operator just asked for this line
         autoFocus
         className="w-full min-h-[44px] rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark"

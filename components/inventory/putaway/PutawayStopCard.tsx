@@ -63,6 +63,7 @@ import { StopDestination } from './StopDestination'
 import { StopProgressRail } from './StopProgressRail'
 import { GiveHomeOffer } from './GiveHomeOffer'
 import { GiveHomeSheet } from './GiveHomeSheet'
+import { WrongProductSheet } from './WrongProductSheet'
 import { homeTargetCopy, isOverflowConfirmStop, overflowConfirmCopy } from './walkStops'
 import type { HomeBinChoice } from '@/services/supabase/homeBinHealthService'
 
@@ -140,6 +141,8 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // Set when the server refuses a level-role mismatch; the operator can force it.
   const [roleGate, setRoleGate] = useState<string | null>(null)
   const [breakingDown, setBreakingDown] = useState(false)
+  // NX-0050: "Not this product?" is open.
+  const [wrongProduct, setWrongProduct] = useState(false)
   // The walker's bin scan said yes to this overflow bin (NX-0033). The row prop
   // only catches up once the walk has refetched, so the card remembers it
   // meanwhile and does not go back to asking.
@@ -681,6 +684,29 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       {/* A product with no home: a manager can name one before the stock is put
           down. Shown while the thing and the bin are still being proved, not at
           the count, when the stop is already committed to a bin. */}
+      {/* NX-0050: the carton is not what its label says. */}
+      {(step === 'identify' || step === 'bin') && !wrongProduct && (
+        <button
+          type="button"
+          className="text-xs text-nexgen-blue-dark underline touch-target-y"
+          onClick={() => setWrongProduct(true)}
+        >
+          Not this product?
+        </button>
+      )}
+      {(step === 'identify' || step === 'bin') && wrongProduct && (
+        <WrongProductSheet
+          row={row}
+          onClose={() => setWrongProduct(false)}
+          onRecorded={(realSku) => {
+            setWrongProduct(false)
+            addToast(`Recorded as ${realSku} and held. The desk will check the barcode.`, 'success')
+            reset()
+            onDone()
+          }}
+        />
+      )}
+
       {(step === 'identify' || step === 'bin') && offersHome && (
         <GiveHomeOffer onGive={() => setHomeOffer('open')} onDecline={() => setHomeOffer('declined')} />
       )}

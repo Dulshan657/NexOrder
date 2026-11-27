@@ -209,6 +209,37 @@ export async function checkPutawayLocation(
   return typeof data?.refusal === 'string' && data.refusal.length > 0 ? data.refusal : null
 }
 
+/** NX-0050: the carton on a Walk stop is not what its label says. The server
+ *  records the real product (counted), held, closes the stop, plans a held
+ *  putaway and tells the desk. Throws the server's words on a refusal. */
+export async function reportWrongProduct(input: {
+  recommendationId: number
+  realProductId: number
+  quantity: number
+  scannedCode?: string
+}): Promise<{ mismatchId: number; heldTasks: Array<{ recommendationId: number; locationId: number | null }> }> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok: true
+    mismatchId: number
+    heldTasks: Array<{ recommendationId: number; locationId: number | null }>
+  }>('report-wrong-product', {
+    body: {
+      recommendation_id: input.recommendationId,
+      real_product_id: input.realProductId,
+      quantity: input.quantity,
+      ...(input.scannedCode ? { scanned_code: input.scannedCode } : {}),
+    },
+  })
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Could not record it, try again.'))
+  return { mismatchId: Number(data?.mismatchId ?? 0), heldTasks: data?.heldTasks ?? [] }
+}
+
+/** NX-0050: an Admin or Manager marks a label mismatch as dealt with. */
+export async function resolveLabelMismatch(id: number): Promise<void> {
+  const { error } = await supabase.functions.invoke('resolve-label-mismatch', { body: { id } })
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Could not mark it resolved, try again.'))
+}
+
 /** Send a queued line to the Walk run without moving any stock. */
 export function assignPutaway(input: Omit<DecidePutawayInput, 'assignOnly'>): Promise<DecidePutawayResult> {
   return decidePutaway({ ...input, assignOnly: true })

@@ -12,6 +12,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { MODULE_SHOP } from '@/lib/modules';
 import { qrActionLabel, qrNotificationAction, type QrNotificationAction } from '@/lib/qr/notificationText';
+import { resolveLabelMismatch } from '@/services/supabase/putawayService';
 
 // Kitchen QR actions open an overlay in place. Both ship with the shop module, so
 // both are gated at the declaration and a tenant without it carries neither chunk.
@@ -157,6 +158,19 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         return onOpenOrders !== undefined;
     };
 
+    // NX-0050: a label mismatch is dealt with at the desk (the barcode checked
+    // and fixed in the product form); an Admin or Manager marks it resolved here.
+    const handleResolveMismatch = async (notif: AppNotification) => {
+        const id = notif.metadata?.labelMismatchId;
+        if (typeof id !== 'number') return;
+        try {
+            await resolveLabelMismatch(id);
+            onMarkRead(notif.id);
+        } catch (e) {
+            console.error('[NotificationCenter] resolve label mismatch failed', e);
+        }
+    };
+
     const handleActivate = (notif: AppNotification) => {
         const action = qrNotificationAction(notif);
         if (!canRun(action)) return;
@@ -268,6 +282,19 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                                     {notifications.map(notif => {
                                         // Gated on the module itself (not only on the overlays being
                                         // null) so the helper is dropped from a tenant without it.
+                                        if (notif.type === 'label_mismatch') {
+                                            const resolvable = isAdminOrManager && !notif.read
+                                                && typeof notif.metadata?.labelMismatchId === 'number';
+                                            return (
+                                                <NotificationItem
+                                                    key={notif.id}
+                                                    notif={notif}
+                                                    onMarkRead={onMarkRead}
+                                                    onActivate={resolvable ? handleResolveMismatch : undefined}
+                                                    actionLabel={resolvable ? 'Mark resolved' : undefined}
+                                                />
+                                            );
+                                        }
                                         const action = MODULE_SHOP ? qrNotificationAction(notif) : null;
                                         const runnable = MODULE_SHOP && canRun(action);
                                         return (

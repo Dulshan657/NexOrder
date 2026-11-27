@@ -987,7 +987,9 @@ export type NotificationType =
     | 'qr_order_pending'   // a kitchen filed an order awaiting approval -> metadata.requestId
     | 'qr_order_approved'  // to the requester: their order was placed
     | 'qr_order_rejected'  // to the requester: declined, metadata.reason says why
-    | 'qr_code_locked';    // a venue's QR locked after 20 wrong PINs -> approvers
+    | 'qr_code_locked'
+    // NX-0050: a carton whose label said another product (_shared/labelMismatch.ts).
+    | 'label_mismatch';    // a venue's QR locked after 20 wrong PINs -> approvers
 
 export interface AppNotification {
     id: string;
@@ -1012,6 +1014,10 @@ export interface AppNotification {
         quotedTotal?: number;
         reason?: string;
         edited?: boolean;
+        // label_mismatch (NX-0050).
+        labelMismatchId?: number | null;
+        labelProductId?: number;
+        realProductId?: number;
     };
 }
 

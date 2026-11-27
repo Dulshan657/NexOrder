@@ -550,6 +550,9 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
       plate_key: l.plateKey,
       ...(l.quarantine ? { quarantine: true } : {}),
+      ...(l.labelMismatch
+        ? { label_mismatch: { scanned_code: l.labelMismatch.scannedCode, label_product_id: l.labelMismatch.labelProductId } }
+        : {}),
     }))
     // Only plates carrying a VALID line: an empty plate is rejected server-side.
     const platePayload: ReceiptPlate[] = plates
