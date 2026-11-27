@@ -129,7 +129,7 @@
 
 ## Goal
 
-Amadiya's owner wants a simple floor rule for now: **one product per location**. The only exception is a shared McCurrie home, where all the products are the same brand and homed there. They also want **space treated as unlimited**, so a homed product always goes home and nothing overflows.
+Amadiya's owner wants a simple floor rule for now: **one product per location**. The only exception is a shared home, where all the products are the same brand and homed there. They also want **space treated as unlimited**, so a homed product always goes home and nothing overflows.
 
 Today:
 - Nothing checks what is already in a bin.
