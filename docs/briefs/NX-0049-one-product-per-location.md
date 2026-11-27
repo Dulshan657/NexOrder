@@ -185,6 +185,6 @@ Today:
 
 - The browser story (A7) and the Admin toggle in a browser: these move to the Amadiya walk after release.
 - Stock moves outside putaway (transfer, quarantine release, stocktake, adjustment, replenishment, off-home, reslot) are not checked by the location rule, as scoped.
-- With the switch on, operator rules that test `capacitySlots` see it as null (it reads as 0 in `rules.ts`), so a `capacitySlots lt N` rule matches every location. No such rule exists on Amadiya today, but this was not tested.
+- With the switch on, operator rules that test `capacitySlots` see it as null (it reads as 0 in `rules.ts`), so a `capacitySlots lt N` rule matches every location. Amadiya has no wie_rules rows at all (read-only check, 2026-11-27); the behaviour with such a rule was not tested.
 - `stockAdjust.integration` has one failure on dev ("rejects a blank reason …"). It is in `inv_adjust_stock`, which this change does not touch, so it was already failing on dev.
 - Running the NX-0032 and NX-0033 integration files in parallel against one dev database can flip a few rollback-isolated cases, because their HTTP parts commit data. Run one at a time, they all pass.
