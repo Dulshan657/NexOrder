@@ -3,7 +3,8 @@
 //
 // Two things occupy a location: stock on hand there, and open putaway lines
 // (suggested or assigned) already headed there. wie_location_occupants (mig
-// 00151) returns both, for the whole warehouse, in one read -- so the planner
+// 00151) returns both, for the whole warehouse, as ONE JSONB value (a set of
+// rows would be capped at 1000 by PostgREST, silently), in one read -- so the planner
 // reads it once, before it inserts its first task (as with the home reads,
 // NX-0032: a read that fails mid-receipt would leave the earlier lines' tasks
 // behind, and the Retry would put them in twice).
@@ -32,18 +33,14 @@ export async function loadWarehouseOccupants(
 ): Promise<Map<number, LocationOccupant[]>> {
   const { data, error } = await admin.rpc('wie_location_occupants', { p_warehouse_id: warehouseId })
   if (error) throw new Error(`location contents load failed: ${error.message}`)
-  return groupOccupants((data ?? []) as OccupantRow[])
+  if (!Array.isArray(data)) throw new Error('location contents load failed: not a list')
+  return groupOccupants(data as OccupantRow[])
 }
 
-/** Group rows by location, leaving out the named putaway lines (the ones being placed). */
-export function groupOccupants(
-  rows: readonly OccupantRow[],
-  excludeRecIds: readonly number[] = [],
-): Map<number, LocationOccupant[]> {
-  const skip = new Set(excludeRecIds)
+/** Group rows by location. */
+export function groupOccupants(rows: readonly OccupantRow[]): Map<number, LocationOccupant[]> {
   const out = new Map<number, LocationOccupant[]>()
   for (const r of rows) {
-    if (r.rec_id != null && skip.has(Number(r.rec_id))) continue
     const loc = Number(r.location_id)
     const o: LocationOccupant = {
       productId: Number(r.product_id),

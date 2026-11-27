@@ -16,7 +16,6 @@ const input = (o: Partial<LocationMixInput> = {}): LocationMixInput => ({
   location: { locationId: 30, code: 'TST-B-02-1', isHold: false },
   occupants: [],
   homedAtLocation: new Set<number>(),
-  ownHandlingUnitId: null,
   ...o,
 })
 
@@ -82,10 +81,9 @@ describe('locationMixRefusal', () => {
     // (the caller passes it in like stock). One on THIS line's own plate is the
     // same mixed pallet going to the same place, so it does not block.
     expect(locationMixRefusal(input({ occupants: [occ({ handlingUnitId: 500 })] }))).toContain('already holds')
-    expect(locationMixRefusal(input({
-      occupants: [occ({ handlingUnitId: 500 })],
-      ownHandlingUnitId: 500,
-    }))).toBeNull()
+    // NX-0049 review H1: a product on the SAME mixed plate still counts -- the
+    // two products of one pallet go to separate locations.
+    expect(locationMixRefusal(input({ occupants: [occ({ handlingUnitId: 500 })] }))).toContain('already holds')
   })
 
   it('a hold location is never refused', () => {

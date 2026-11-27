@@ -9,10 +9,11 @@
 // Anything else is refused, for every role. A hold (quarantine) location is
 // never refused: held stock of many products waits there by design.
 //
-// "Holds" means stock on hand there OR an open putaway line of another product
-// already assigned there, so two lines cannot both claim an empty location for
-// different products. Stock or lines on THIS line's own plate do not count:
-// that is the same mixed pallet going to the same place.
+// "Holds" means stock on hand there OR an earlier open putaway line of another
+// product already headed there, so two lines cannot both claim an empty
+// location for different products. The caller passes only earlier lines (the
+// SQL compares ids), so two open lines never refuse each other. Two products
+// from one mixed pallet are two products: they go to separate locations.
 //
 // The same rule lives in SQL (wie_location_mix_block, mig 00151), which every
 // putaway transaction asks under its row lock; this copy lets the planner never
@@ -38,29 +39,29 @@ export interface LocationMixInput {
     homeCode: string | null
   }
   location: { locationId: number; code: string; isHold: boolean }
-  /** Stock on hand in the location, and other open putaway lines assigned to it. */
+  /** Stock on hand in the location, and earlier open putaway lines headed there. */
   occupants: readonly LocationOccupant[]
   /** Products whose primary home is this location. */
   homedAtLocation: ReadonlySet<number>
-  /** The plate the line being placed is on, if any. */
-  ownHandlingUnitId?: number | null
 }
 
-/** Same brand, ignoring case and spaces. A blank brand never matches. */
+/** The brand as compared: ASCII whitespace trimmed, lower-cased (SQL wie_brand_key). */
+export function brandKey(brand: string | null): string {
+  return (brand ?? '').replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '').toLowerCase()
+}
+
+/** Same brand, ignoring case and surrounding spaces. A blank brand never matches. */
 export function sameBrand(a: string | null, b: string | null): boolean {
-  const x = (a ?? '').trim().toLowerCase()
-  const y = (b ?? '').trim().toLowerCase()
-  return x.length > 0 && x === y
+  const x = brandKey(a)
+  return x.length > 0 && x === brandKey(b)
 }
 
 /** The refusal text, or null when the placement is allowed. */
 export function locationMixRefusal(input: LocationMixInput): string | null {
-  const { product, location, occupants, homedAtLocation, ownHandlingUnitId } = input
+  const { product, location, occupants, homedAtLocation } = input
   if (location.isHold) return null
 
-  const others = occupants
-    .filter((o) => o.productId !== product.productId)
-    .filter((o) => !(ownHandlingUnitId != null && o.handlingUnitId === ownHandlingUnitId))
+  const others = occupants.filter((o) => o.productId !== product.productId)
   if (others.length === 0) return null
 
   const isOwnHome = product.homeLocationId === location.locationId

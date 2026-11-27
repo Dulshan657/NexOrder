@@ -24,10 +24,12 @@
 --    It is the SQL copy of _shared/wie/locationMix.ts, judged in this order:
 --      a. A target in a hold zone is allowed: held stock of many products
 --         waits there.
---      b. "Others" are the stock on hand in the target, plus the OTHER open
---         putaway lines headed there. A product other than this line's counts,
---         unless it sits on this line's own plate (the same mixed pallet).
---         With no others, the target is allowed.
+--      b. "Others" are the stock on hand in the target, plus the EARLIER open
+--         putaway lines headed there (a lower id: the first claim wins, so two
+--         open lines never refuse each other). Any product other than this
+--         line's counts -- also one from the same mixed pallet, which is split
+--         across locations like any other two products. With no others, the
+--         target is allowed.
 --      c. When the target is this product's home, an other is fine if it is
 --         homed there too and has the same non-blank brand (case and spaces
 --         ignored).
@@ -43,7 +45,10 @@
 --        it then goes anywhere the location rule allows.
 --      * step 6 is skipped when putaway_ignore_capacity is on. The home always
 --        has room, so a putaway anywhere else is refused with
---        'Put this in its home location {code}.'
+--        'Put this in its home location {code}.' -- except a line the planner
+--        sent to overflow, which it only does when the home failed a rule SQL
+--        cannot judge here (weight, hazard, compatibility, slotting), or which
+--        predates the switch: that line is confirmed where it was sent.
 --
 -- 5. wie_home_block(rec, target) keeps its signature and every caller, i.e.
 --    every putaway transaction (complete, complete many, assign, redirect,
@@ -68,16 +73,11 @@ COMMENT ON COLUMN public.app_settings.putaway_ignore_capacity IS
     'nothing overflows. Weight limits still apply. Off by default (mig 00151, NX-0049).';
 
 -- ── 2. What is in each location of a warehouse ───────────────────────────────
+-- One JSONB array, not a set of rows: PostgREST caps a set-returning call at
+-- 1000 rows without an error, and a silently short list would read as empty
+-- locations -- this is a safety read that must fail closed, never open.
 CREATE OR REPLACE FUNCTION public.wie_location_occupants(p_warehouse_id INT)
-RETURNS TABLE (
-    location_id      INT,
-    product_id       INT,
-    sku              TEXT,
-    name             TEXT,
-    brand            TEXT,
-    handling_unit_id BIGINT,
-    rec_id           BIGINT
-)
+RETURNS JSONB
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
@@ -86,30 +86,55 @@ AS $$
     WITH wh AS (
         SELECT materialized_path FROM public.locations
         WHERE id = p_warehouse_id AND kind = 'WAREHOUSE'
+    ),
+    occ AS (
+        SELECT DISTINCT b.location_id, b.product_id, b.handling_unit_id::BIGINT AS handling_unit_id,
+               NULL::BIGINT AS rec_id
+        FROM public.inventory_balances b
+        JOIN public.locations l ON l.id = b.location_id
+        CROSS JOIN wh
+        WHERE b.on_hand > 0
+          AND wh.materialized_path IS NOT NULL
+          AND l.materialized_path LIKE wh.materialized_path || '/%'
+        UNION ALL
+        SELECT COALESCE(r.assigned_location_id, r.recommended_location_id), r.product_id,
+               r.handling_unit_id::BIGINT, r.id
+        FROM public.wie_putaway_recommendations r
+        WHERE r.warehouse_id = p_warehouse_id
+          AND r.status IN ('suggested', 'assigned')
+          AND COALESCE(r.assigned_location_id, r.recommended_location_id) IS NOT NULL
     )
-    SELECT b.location_id, b.product_id, pr.sku::TEXT, pr.name::TEXT, pr.brand::TEXT,
-           b.handling_unit_id::BIGINT, NULL::BIGINT
-    FROM public.inventory_balances b
-    JOIN public.locations l ON l.id = b.location_id
-    JOIN public.products pr ON pr.id = b.product_id
-    CROSS JOIN wh
-    WHERE b.on_hand > 0
-      AND wh.materialized_path IS NOT NULL
-      AND l.materialized_path LIKE wh.materialized_path || '/%'
-    UNION ALL
-    SELECT COALESCE(r.assigned_location_id, r.recommended_location_id), r.product_id,
-           pr.sku::TEXT, pr.name::TEXT, pr.brand::TEXT, r.handling_unit_id::BIGINT, r.id
-    FROM public.wie_putaway_recommendations r
-    JOIN public.products pr ON pr.id = r.product_id
-    WHERE r.warehouse_id = p_warehouse_id
-      AND r.status IN ('suggested', 'assigned')
-      AND COALESCE(r.assigned_location_id, r.recommended_location_id) IS NOT NULL;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'location_id', o.location_id, 'product_id', o.product_id,
+               'sku', pr.sku, 'name', pr.name, 'brand', pr.brand,
+               'handling_unit_id', o.handling_unit_id, 'rec_id', o.rec_id)
+             ORDER BY o.location_id, o.product_id), '[]'::jsonb)
+    FROM occ o
+    JOIN public.products pr ON pr.id = o.product_id;
 $$;
 
 REVOKE ALL ON FUNCTION public.wie_location_occupants(INT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.wie_location_occupants(INT) TO service_role;
 
 -- ── 3. The location rule ─────────────────────────────────────────────────────
+-- Brand compared the way _shared/wie/locationMix.ts brandKey does: ASCII
+-- whitespace trimmed, lower-cased. Blank is never a match.
+CREATE OR REPLACE FUNCTION public.wie_brand_key(p_brand TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+    SELECT lower(regexp_replace(COALESCE(p_brand, ''), '^[ 	
+
+]+|[ 	
+
+]+$', '', 'g'));
+$$;
+
+REVOKE ALL ON FUNCTION public.wie_brand_key(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.wie_brand_key(TEXT) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.wie_location_mix_block(
     p_rec_id         BIGINT,
     p_to_location_id INT
@@ -168,29 +193,30 @@ BEGIN
     -- b-d. The first other product that blocks, lowest id first.
     SELECT o.sku, o.name INTO v_sku, v_name
     FROM (
-        SELECT b.product_id, b.handling_unit_id
+        SELECT b.product_id
         FROM public.inventory_balances b
         WHERE b.location_id = p_to_location_id AND b.on_hand > 0
         UNION ALL
-        SELECT r.product_id, r.handling_unit_id
+        -- Only an EARLIER open line claims the location, so two open lines of
+        -- different products headed for one location never refuse each other:
+        -- the first one through wins, and the later one is told.
+        SELECT r.product_id
         FROM public.wie_putaway_recommendations r
-        WHERE r.id <> v_rec.id
+        WHERE r.id < v_rec.id
           AND r.status IN ('suggested', 'assigned')
           AND COALESCE(r.assigned_location_id, r.recommended_location_id) = p_to_location_id
     ) occ
     JOIN public.products o ON o.id = occ.product_id
     WHERE occ.product_id <> v_rec.product_id
-      AND NOT (v_rec.handling_unit_id IS NOT NULL
-               AND occ.handling_unit_id IS NOT DISTINCT FROM v_rec.handling_unit_id)
-      AND NOT (
-            v_home_bin = p_to_location_id
+      AND NOT COALESCE(
+            v_home_bin IS NOT DISTINCT FROM p_to_location_id
         AND EXISTS (SELECT 1 FROM public.product_home_bins oh
                      WHERE oh.product_id = occ.product_id
                        AND oh.bin_id = p_to_location_id
                        AND oh.purpose = 'primary')
-        AND length(btrim(COALESCE(v_brand, ''))) > 0
-        AND lower(btrim(COALESCE(o.brand, ''))) = lower(btrim(v_brand))
-      )
+        AND length(public.wie_brand_key(v_brand)) > 0
+        AND public.wie_brand_key(o.brand) = public.wie_brand_key(v_brand)
+      , false)
     ORDER BY occ.product_id
     LIMIT 1;
 
@@ -360,6 +386,14 @@ BEGIN
     SELECT COALESCE(s.putaway_ignore_capacity, false) INTO v_ignore_cap
     FROM public.app_settings s WHERE s.id = 1;
     IF COALESCE(v_ignore_cap, false) THEN
+        -- The planner, which also ignores capacity, only sends a line to
+        -- overflow when the home failed a rule this function cannot judge
+        -- (weight, hazard, compatibility, slotting) -- or before the switch
+        -- was turned on. Such a line may be confirmed where the planner sent
+        -- it; anything else is held to the home.
+        IF v_rec.suggestion_source = 'overflow' THEN
+            RETURN NULL;
+        END IF;
         RETURN format('Put this in its home location %s.', v_home_loc.code);
     END IF;
 

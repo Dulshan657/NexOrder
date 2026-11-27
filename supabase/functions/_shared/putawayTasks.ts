@@ -405,7 +405,6 @@ export async function generatePutawayTasks(
       location: { locationId: c.locationId, code: c.code, isHold: c.isHold === true },
       occupants: [...(occupants.get(c.locationId) ?? []), ...(placedHere.get(c.locationId) ?? [])],
       homedAtLocation: homedAt.get(c.locationId) ?? new Set<number>(),
-      ownHandlingUnitId: line.hu_id ?? null,
     }) === null)
 
     // Held bins come from the candidates themselves rather than a second query:
@@ -457,7 +456,13 @@ export async function generatePutawayTasks(
     // line (G3), and is never a "Home full" line waiting for a yes.
     const held = line.quarantine === true
     const suggestMakeHome = home === null && !held
-    const remainderSource: SuggestionSource = home && !held ? 'overflow' : 'engine'
+    // NX-0049: a home the location rule left out (a stray product sits in it) is
+    // not "full": its line goes straight to the Walk like a homeless one, never
+    // as a "Home full" stop -- wie_home_rule step 5b agrees.
+    const homeBlocked = home !== null
+      && allCandidates.some((c) => c.locationId === home.binId)
+      && !candidates.some((c) => c.locationId === home.binId)
+    const remainderSource: SuggestionSource = home && !held && !homeBlocked ? 'overflow' : 'engine'
 
     const tagged: Array<{ alloc: ReturnType<typeof planPutaway>['allocations'][number]; source: SuggestionSource }> = []
     let remainder = home && homeCand ? homePlan.remainder : line.quantity
