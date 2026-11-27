@@ -41,6 +41,7 @@ import {
   normaliseTargetArgs,
 } from './lib/homeBinsCli.mjs'
 import { loadHomeBinHealth } from '../supabase/functions/_shared/homeBinHealthLoad.ts'
+import { loadIgnoreCapacity } from '../supabase/functions/_shared/putawaySettings.ts'
 
 async function main() {
   // Not orExit: that exits 1 on a TargetError, and 1 means "problems found".
@@ -64,8 +65,11 @@ async function main() {
 
   let checked = 0
   let problems = 0
+  // NX-0049: judge homes the way putaway does, with capacity ignored when the
+  // owner has switched it off.
+  const ignoreCapacity = await loadIgnoreCapacity(admin)
   for (const warehouse of warehouses ?? []) {
-    const report = await loadHomeBinHealth(admin, warehouse.id)
+    const report = await loadHomeBinHealth(admin, warehouse.id, { ignoreCapacity })
     checked += report.checked
     for (const row of report.rows) {
       for (const problem of row.problems) {

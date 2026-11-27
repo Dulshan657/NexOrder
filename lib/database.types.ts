@@ -822,6 +822,7 @@ export type Database = {
           pallet_base_height_mm: number
           pallet_max_load_height_mm: number
           po_auto_approve_block_on_short_stock: boolean
+          putaway_ignore_capacity: boolean
           po_auto_approve_block_on_sender_mismatch: boolean
           po_auto_approve_block_on_customer_mismatch: boolean
         }
@@ -845,6 +846,7 @@ export type Database = {
           pallet_base_height_mm?: number
           pallet_max_load_height_mm?: number
           po_auto_approve_block_on_short_stock?: boolean
+          putaway_ignore_capacity?: boolean
           po_auto_approve_block_on_sender_mismatch?: boolean
           po_auto_approve_block_on_customer_mismatch?: boolean
         }
@@ -868,6 +870,7 @@ export type Database = {
           pallet_base_height_mm?: number
           pallet_max_load_height_mm?: number
           po_auto_approve_block_on_short_stock?: boolean
+          putaway_ignore_capacity?: boolean
           po_auto_approve_block_on_sender_mismatch?: boolean
           po_auto_approve_block_on_customer_mismatch?: boolean
         }

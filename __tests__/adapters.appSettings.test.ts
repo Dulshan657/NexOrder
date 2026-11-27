@@ -26,6 +26,7 @@ const baseRow = {
   pallet_footprint_width_mm: 1165,
   pallet_base_height_mm: 150,
   pallet_max_load_height_mm: 1650,
+  putaway_ignore_capacity: true,
 } as Parameters<typeof toAppSettings>[0]
 
 describe('toAppSettings / fromAppSettings', () => {
@@ -53,6 +54,7 @@ describe('toAppSettings / fromAppSettings', () => {
       pallet_footprint_width_mm: 1165,
       pallet_base_height_mm: 150,
       pallet_max_load_height_mm: 1650,
+      putaway_ignore_capacity: true,
     })
   })
 

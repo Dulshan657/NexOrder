@@ -55,6 +55,8 @@ export interface HomeFirstInput {
   unitLoad: boolean
   home: HomeSlot | null
   candidates: ReadonlyArray<AnchorCandidate>
+  /** NX-0049: app_settings.putaway_ignore_capacity -- space is unlimited. */
+  ignoreCapacity?: boolean
 }
 
 export type SuggestionSource = 'home' | 'overflow' | 'engine'
@@ -89,8 +91,18 @@ export function goesStraightToWalk(a: {
   return a.locationId !== null && (a.source !== 'overflow' || a.unitLoad)
 }
 
+export interface HeadroomOptions {
+  /**
+   * NX-0049: the owner's "space is unlimited for now". Neither capacity nor
+   * max_qty bounds the home, so it always takes the whole line and nothing
+   * overflows. Off by default (app_settings.putaway_ignore_capacity).
+   */
+  ignoreCapacity?: boolean
+}
+
 /** Base units the home bin can still take, bounded by max_qty AND capacity. */
-export function homeHeadroom(home: HomeSlot, sizeFactor: number): number {
+export function homeHeadroom(home: HomeSlot, sizeFactor: number, opts: HeadroomOptions = {}): number {
+  if (opts.ignoreCapacity) return Infinity
   const factor = sizeFactor > 0 ? sizeFactor : 1
   const byMax = home.maxQty === null ? Infinity : home.maxQty - home.onHand - home.pendingQty
   const byCapacity = home.capacitySlots === null
@@ -118,7 +130,7 @@ export function orderByAnchor(
 }
 
 export function planHomeFirst(input: HomeFirstInput): HomeFirstPlan {
-  const { quantity, sizeFactor, unitLoad, home, candidates } = input
+  const { quantity, sizeFactor, unitLoad, home, candidates, ignoreCapacity } = input
 
   if (!home) {
     return {
@@ -144,7 +156,7 @@ export function planHomeFirst(input: HomeFirstInput): HomeFirstPlan {
     }
   }
 
-  const room = homeHeadroom(home, sizeFactor)
+  const room = homeHeadroom(home, sizeFactor, { ignoreCapacity })
   // Finishing the line takes the exact remainder; a partial fill takes whole
   // units only, so no sub-unit sliver is stranded (as planPutaway does).
   const homeQty = room + EPS >= quantity ? quantity : Math.floor(room + EPS)

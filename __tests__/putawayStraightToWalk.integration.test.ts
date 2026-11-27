@@ -39,7 +39,7 @@
  * a time: they number their suppliers by MAX(id) and race when run together.
  */
 import { randomUUID } from 'node:crypto'
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import type pg from 'pg'
 import { createClient } from '@supabase/supabase-js'
 import { connect, hasDbCreds, withRollbackTx, expectRaise } from './support/pgTestClient'
@@ -1192,6 +1192,20 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
 
   afterAll(async () => {
     if (h) await tearDownHttpWorld(h)
+  })
+
+  // NX-0049 (mig 00151): an open putaway line claims its location for its
+  // product, so a line one test leaves open would refuse another product's line
+  // in a later test (one product per location). Each test starts with no open
+  // claims in the made-up warehouse; nothing a test asserts carries over.
+  afterEach(async () => {
+    if (!h) return
+    await withClient(async (client) => {
+      await client.query(
+        `UPDATE public.wie_putaway_recommendations SET status = 'expired'
+          WHERE warehouse_id = $1 AND status IN ('suggested', 'assigned')`,
+        [h.w.warehouseId])
+    })
   })
 
   /** recommend-putaway as the Manager, for one line; the recommendations it answers with. */

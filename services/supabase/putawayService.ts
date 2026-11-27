@@ -190,6 +190,25 @@ export async function confirmOverflowPutaway(
   return { assignedId: Number(data?.assigned_id ?? recommendationId) }
 }
 
+/** Would the server refuse this putaway line at this location (NX-0049)? The
+ *  home rule, then one product per location, asked by check-putaway-location
+ *  through wie_home_block. Resolves to the refusal text, or null when allowed.
+ *  Throws when the check could not be made. */
+export async function checkPutawayLocation(
+  recommendationId: number,
+  locationCode: string,
+): Promise<string | null> {
+  const query = `recommendationId=${recommendationId}&locationCode=${encodeURIComponent(locationCode)}`
+  const { data, error } = await supabase.functions.invoke<{ ok: true; refusal: string | null }>(
+    `check-putaway-location?${query}`,
+    { method: 'GET' },
+  )
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error, 'Could not check that location, try again.'))
+  }
+  return typeof data?.refusal === 'string' && data.refusal.length > 0 ? data.refusal : null
+}
+
 /** Send a queued line to the Walk run without moving any stock. */
 export function assignPutaway(input: Omit<DecidePutawayInput, 'assignOnly'>): Promise<DecidePutawayResult> {
   return decidePutaway({ ...input, assignOnly: true })

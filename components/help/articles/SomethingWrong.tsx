@@ -57,7 +57,11 @@ export default function SomethingWrong() {
             },
             {
               problem: 'The location is full or blocked',
-              fix: 'Put the goods in a nearby location and scan that one. A different bay is accepted and recorded.',
+              fix: 'Put the goods in a nearby empty location and scan that one. A different bay is accepted and recorded.',
+            },
+            {
+              problem: 'The scan says the location already holds another product',
+              fix: 'One product per location. Take it to an empty location, or to its home if the message names one, and tell your supervisor what you found there.',
             },
             {
               problem: 'The location scan is refused',

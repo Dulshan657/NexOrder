@@ -1095,6 +1095,8 @@ export interface AppSettings {
     palletFootprintWidthMm: number;
     palletBaseHeightMm: number;
     palletMaxLoadHeightMm: number;
+    // NX-0049 (mig 00151): putaway treats space as unlimited. Default false.
+    putawayIgnoreCapacity: boolean;
 }
 
 export interface PantryItem {

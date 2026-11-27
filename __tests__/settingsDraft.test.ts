@@ -24,6 +24,7 @@ const base: AppSettings = {
   palletFootprintWidthMm: 1165,
   palletBaseHeightMm: 150,
   palletMaxLoadHeightMm: 1650,
+  putawayIgnoreCapacity: false,
 }
 
 describe('pickSettings', () => {

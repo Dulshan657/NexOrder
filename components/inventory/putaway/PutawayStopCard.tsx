@@ -95,6 +95,12 @@ interface PutawayStopCardProps {
    *  is in the operator's hands. The card says so rather than implying a
    *  certainty it does not have. Computed by the walk, which holds every stop. */
   unlabelledTwins: ReadonlyArray<{ huCode: string; quantity: number }>
+  /** NX-0049: asks the server whether it would refuse this line at the scanned
+   *  location (the home rule, then one product per location), so the refusal
+   *  shows at the scan and not after Confirm. Resolves to the refusal text or
+   *  null. Advice only: complete-putaway judges again under its row lock, so a
+   *  check that fails does not stop the walker. Absent = no check. */
+  checkLocation?: (recommendationId: number, locationCode: string) => Promise<string | null>
   onActivate: () => void
   onDone: () => void
 }
@@ -105,7 +111,7 @@ type Step = 'idle' | 'identify' | 'bin' | 'qty'
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId,
-  canSetHome = false, binHeld = false, unlabelledTwins, onActivate, onDone,
+  canSetHome = false, binHeld = false, unlabelledTwins, checkLocation, onActivate, onDone,
 }) => {
   const { addToast } = useToastActions()
   const complete = useCompletePutaway()
@@ -293,7 +299,13 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     }
   }
 
+  // NX-0049: the latest location check wins. A scan made while an earlier check
+  // is still out supersedes it, so a slow refusal can never land on a stop that
+  // a later scan already moved on to the count.
+  const checkSeq = useRef(0)
+
   const onBinScan = async (raw: string) => {
+    const seq = ++checkSeq.current
     const verdict = checkPutawayScan(context, { ...evidence, locationCode: raw }, row.quantity)
     if (verdict.ok === false) {
       setError(verdict.message)
@@ -353,6 +365,22 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       }
       setOverflowConfirmed(true)
       addToast(confirmCopy.confirmed, 'success')
+    } else if (checkLocation) {
+      // NX-0049: would the server refuse this location? Asked here so the walker
+      // reads it before counting. A confirm stop was already judged above.
+      let refusal: string | null = null
+      try {
+        refusal = await checkLocation(row.id, normalizeScan(raw))
+      } catch (e) {
+        console.warn('[PutawayStopCard] location check failed; the server checks again at Confirm', e)
+      }
+      if (seq !== checkSeq.current) return
+      if (refusal) {
+        setError(refusal)
+        setScannedBin('')
+        signalFlash('reject')
+        return
+      }
     }
     setError(null)
     // A DIFFERENT bin is accepted here on purpose — the operator is standing at

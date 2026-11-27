@@ -73,8 +73,9 @@ export default function PutPalletAway() {
             </Step>
           </Steps>
           <Callout kind="warn" title="Location full or blocked?">
-            Use a nearby location and scan that one instead. A different bay is accepted and recorded, so the system still
-            knows where the stock is. Can't do the stop now? Tap <Ui>Put it back on the queue</Ui> (E).
+            Use a nearby <b>empty</b> location and scan that one instead. A different bay is accepted and recorded, so the
+            system still knows where the stock is. A location that already holds a different product is refused, and so is
+            any other location while the product has a home. Can't do the stop now? Tap <Ui>Put it back on the queue</Ui> (E).
           </Callout>
         </WithShot>
       </Section>

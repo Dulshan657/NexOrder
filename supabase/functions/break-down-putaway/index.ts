@@ -235,6 +235,27 @@ serve(async (req: Request) => {
       }
     }
 
+    // ── One product per location (NX-0049, mig 00151) ────────────────────────
+    // The portions are written assigned to these locations, and an open
+    // assigned line claims its location for its product. So a location already
+    // holding another product is refused here, in the words the walk would
+    // read at completion, rather than left to claim it and be refused later.
+    // Only the location rule: the home rule's own handling of pallet portions
+    // (00142 unit_load) is unchanged.
+    for (const id of locationIds) {
+      const { data: refusal, error: mixErr } = await admin.rpc('wie_location_mix_block', {
+        p_rec_id: recommendation_id,
+        p_to_location_id: id,
+      })
+      if (mixErr) {
+        console.error(`[break-down-putaway] wie_location_mix_block ${recommendation_id} -> ${id}: ${mixErr.message}`)
+        throw new EdgeFunctionError('INTERNAL', 'Could not check that location, try again.')
+      }
+      if (typeof refusal === 'string' && refusal.length > 0) {
+        throw new EdgeFunctionError('CONFLICT', refusal)
+      }
+    }
+
     // ── Rack-level role gate (mig 00072) ─────────────────────────────────────
     // EVERY offending destination is named, not just the first: one press of
     // "Place anyway" has to clear the whole sheet, or the operator overrides

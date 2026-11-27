@@ -28,6 +28,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { loadHomeBinHealth } from '../_shared/homeBinHealthLoad.ts'
+import { loadIgnoreCapacity } from '../_shared/putawaySettings.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -77,7 +78,7 @@ serve(async (req: Request) => {
 
     let report
     try {
-      report = await loadHomeBinHealth(admin, warehouseId)
+      report = await loadHomeBinHealth(admin, warehouseId, { ignoreCapacity: await loadIgnoreCapacity(admin) })
     } catch (e) {
       // The detail goes to the server log; the operator gets a message they can act on.
       console.error('[home-bin-health] load failed', e)

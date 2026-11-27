@@ -24,6 +24,7 @@ import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations
 import { useZoneProfiles } from '../../hooks/queries/useZoneProfiles';
 import { buildHeldLocationIds } from '@/lib/heldLocations';
 import { PutawayStopCard } from './putaway/PutawayStopCard';
+import { checkPutawayLocation } from '@/services/supabase/putawayService';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
 import { walkBinId } from './putaway/walkStops';
 import StickyScanBar from './StickyScanBar';
@@ -316,6 +317,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
                 canSetHome={canSetHome}
                 binHeld={binHeldFor(row)}
                 unlabelledTwins={twinsById.get(row.id) ?? EMPTY_TWINS}
+                checkLocation={checkPutawayLocation}
                 onActivate={() => setActiveId(row.id)}
                 onDone={() => setActiveId(null)}
               />

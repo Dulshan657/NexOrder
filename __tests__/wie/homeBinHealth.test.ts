@@ -388,3 +388,12 @@ describe('homeBinChoices', () => {
     expect(facts.map((f) => f.binCode)).toEqual(before)
   })
 })
+
+describe('isFull', () => {
+  it('ignoring capacity, nothing is full', () => {
+    // NX-0049: app_settings.putaway_ignore_capacity treats space as unlimited.
+    expect(codes(healthy({ capacitySlots: 10, usedSlots: 10, ignoreCapacity: true }))).toEqual([])
+    expect(codes(healthy({ maxQty: 5, onHandAtHome: 5, ignoreCapacity: true }))).toEqual([])
+    expect(codes(healthy({ capacitySlots: 10, usedSlots: 10, ignoreCapacity: false }))).toEqual(['full'])
+  })
+})

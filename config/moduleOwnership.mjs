@@ -123,6 +123,7 @@ export const FUNCTION_MODULES = {
   'assign-replenishment': 'inventory_dispatch',
   'break-down-putaway': 'inventory_dispatch',
   'commit-reslot-plan': 'inventory_dispatch',
+  'check-putaway-location': 'inventory_dispatch',
   'complete-putaway': 'inventory_dispatch',
   'complete-replenishment': 'inventory_dispatch',
   'confirm-label-print': 'inventory_dispatch',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { goesStraightToWalk, planHomeFirst, type HomeSlot } from '../../supabase/functions/_shared/wie/homeFirst'
+import { goesStraightToWalk, homeHeadroom, planHomeFirst, type HomeSlot } from '../../supabase/functions/_shared/wie/homeFirst'
 
 const home = (o: Partial<HomeSlot> = {}): HomeSlot => ({
   locationId: 20, maxQty: null, onHand: 0, pendingQty: 0,
@@ -94,5 +94,18 @@ describe('goesStraightToWalk', () => {
     expect(goesStraightToWalk({ source: 'overflow', unitLoad: true, locationId: 7 })).toBe(true)
     expect(goesStraightToWalk({ source: 'overflow', unitLoad: false, locationId: 7 })).toBe(false)
     expect(goesStraightToWalk({ source: 'engine', unitLoad: false, locationId: null })).toBe(false)
+  })
+})
+
+describe('homeHeadroom', () => {
+  it('ignoring capacity, a home is never full', () => {
+    // Full by slots AND by max_qty: with capacity ignored (NX-0049) neither counts.
+    const full = home({ capacitySlots: 10, usedSlots: 10, maxQty: 5, onHand: 5 })
+    expect(homeHeadroom(full, 1)).toBe(0)
+    expect(homeHeadroom(full, 1, { ignoreCapacity: true })).toBe(Infinity)
+    const plan = planHomeFirst({
+      quantity: 400, sizeFactor: 1, unitLoad: false, home: full, candidates: [], ignoreCapacity: true,
+    })
+    expect(plan).toMatchObject({ homeQty: 400, remainder: 0 })
   })
 })
