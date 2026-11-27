@@ -22,6 +22,7 @@ import { generatePutawayTasks, type PutawayLineInput } from '../_shared/putawayT
 import { putawayForReceipt, receiveStockBody, type ReceivePutawayOutcome } from '../_shared/receivePutaway.ts'
 import { resolveReceiveDestination } from '../_shared/receiveDestination.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { recordLabelMismatches } from '../_shared/labelMismatch.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -47,6 +48,13 @@ const receiptLineSchema = z.object({
   // while the rest of the delivery goes to ordinary stock; the header flag below
   // is what makes "hold the whole delivery" one click.
   quarantine: z.boolean().optional(),
+  // NX-0050: the carton's label said ANOTHER product ("Not this product?").
+  // The line is the real product; it is received held, and the mismatch is
+  // recorded for the desk.
+  label_mismatch: z.object({
+    scanned_code: z.string().min(1).max(120),
+    label_product_id: z.number().int().positive(),
+  }).optional(),
 })
 
 // A pallet or carton the operator built at the dock (mig 00075).
@@ -261,6 +269,14 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
     }
     const { receipt, lines, plates } = parsed.data
+    // NX-0050: a label mismatch names a DIFFERENT, real product and a code.
+    const mismatchLines = lines.filter((l) => l.label_mismatch)
+    if (mismatchLines.some((l) => l.label_mismatch!.label_product_id === l.product_id)) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'A label mismatch must name a different product from the line.')
+    }
+    if (mismatchLines.some((l) => l.label_mismatch!.scanned_code.trim().length === 0)) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'A label mismatch needs the code on the label.')
+    }
 
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -294,6 +310,16 @@ serve(async (req: Request) => {
       activeWarehouseCount ?? 0,
     )
 
+    // NX-0050: a label mismatch's label product must exist.
+    if (mismatchLines.length > 0) {
+      const ids = [...new Set(mismatchLines.map((l) => l.label_mismatch!.label_product_id))]
+      const { data: found, error: fErr } = await admin.from('products').select('id').in('id', ids)
+      if (fErr) throw new EdgeFunctionError('INTERNAL', 'Could not check the label product, try again.')
+      if ((found ?? []).length !== ids.length) {
+        throw new EdgeFunctionError('INVALID_INPUT', 'A label mismatch names a product that does not exist.')
+      }
+    }
+
     // Convert UOM quantities to base units (the RPC + ledger only speak base).
     const baseLines = await toBaseLines(admin, lines)
 
@@ -310,7 +336,8 @@ serve(async (req: Request) => {
         throw new EdgeFunctionError('INTERNAL', `no plate resolved for line ${i + 1}`)
       }
       // plate_key is a client-side correlation token; the RPC wants the id.
-      const { plate_key: _pk, ...rest } = line as Record<string, unknown>
+      // label_mismatch (NX-0050) is recorded after the receipt, not by the RPC.
+      const { plate_key: _pk, label_mismatch: _lm, ...rest } = line as Record<string, unknown>
       return { ...rest, handling_unit_id: huId }
     })
 
@@ -386,7 +413,8 @@ serve(async (req: Request) => {
         // The header flag sets every line; a line may opt itself out by
         // saying false explicitly (mig 00101). `?? ` and not `||`, so an
         // explicit false on the line is honoured rather than swallowed.
-        quarantine: lines[i].quarantine ?? receipt?.quarantine ?? false,
+        // A line whose label was wrong (NX-0050) is always held.
+        quarantine: lines[i].label_mismatch ? true : (lines[i].quarantine ?? receipt?.quarantine ?? false),
       }))
       outcome = await putawayForReceipt(putawayLines, (toPlace) =>
         generatePutawayTasks(admin, {
@@ -396,6 +424,31 @@ serve(async (req: Request) => {
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,
         }),
       )
+    }
+
+    // NX-0050: record each "Not this product?" line and tell the desk. After
+    // the receipt, because the receipt id names it; a failure here is logged
+    // and does not undo a receipt whose held stock is already right.
+    // In base units, as the stock was received (`baseLines` is index-aligned).
+    const mismatches = lines
+      .map((l, i) => ({ l, base: Number((baseLines[i] as { quantity?: number }).quantity ?? l.quantity) }))
+      .filter(({ l }) => l.label_mismatch)
+      .map(({ l, base }) => ({
+        scannedCode: l.label_mismatch!.scanned_code.trim(),
+        labelProductId: l.label_mismatch!.label_product_id,
+        realProductId: l.product_id,
+        quantity: base,
+        warehouseId: (destLocationId ?? locationId) as number,
+        goodsReceiptId: ((result as any)?.receipt_id as number | undefined) ?? null,
+        putawayRecId: null,
+        reportedBy: auth.userId,
+      }))
+    if (mismatches.length > 0) {
+      try {
+        await recordLabelMismatches(admin, mismatches)
+      } catch (e) {
+        console.error('[receive-stock] label mismatch record failed', e)
+      }
     }
 
     return new Response(

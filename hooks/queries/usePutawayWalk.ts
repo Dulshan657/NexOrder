@@ -13,6 +13,7 @@ import { getPutawayRoute, type PutawayRouteResult } from '@/services/supabase/pu
 import {
   completePutaway,
   confirmOverflowPutaway,
+  reportWrongProduct,
   unassignPutaway,
   type CompletePutawayInput,
   type CompletePutawayResult,
@@ -49,6 +50,22 @@ export function useCompletePutaway() {
   const qc = useQueryClient()
   return useMutation<CompletePutawayResult, Error, CompletePutawayInput>({
     mutationFn: (input) => completePutaway(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
+      qc.invalidateQueries({ queryKey: ['putaway-route'] })
+    },
+  })
+}
+
+/** NX-0050: "Not this product?" -- the stock is re-recorded as the real
+ *  product and held, so balances and the walk both change. */
+export function useReportWrongProduct() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { recommendationId: number; realProductId: number; quantity: number; scannedCode?: string }) =>
+      reportWrongProduct(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: putawayKeys.all })

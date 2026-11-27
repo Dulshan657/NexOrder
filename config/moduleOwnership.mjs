@@ -125,6 +125,8 @@ export const FUNCTION_MODULES = {
   'commit-reslot-plan': 'inventory_dispatch',
   'check-putaway-location': 'inventory_dispatch',
   'complete-putaway': 'inventory_dispatch',
+  'report-wrong-product': 'inventory_dispatch',
+  'resolve-label-mismatch': 'inventory_dispatch',
   'complete-replenishment': 'inventory_dispatch',
   'confirm-label-print': 'inventory_dispatch',
   'count-bin': 'inventory_dispatch',

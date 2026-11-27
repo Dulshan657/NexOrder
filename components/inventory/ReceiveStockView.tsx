@@ -385,7 +385,8 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
   const setQuarantine = (next: boolean) => {
     setQuarantineAll(next)
-    setStaging((prev) => ({ ...prev, lines: prev.lines.map((l) => ({ ...l, quarantine: next })) }))
+    // A "Not this product?" line (NX-0050) stays held whatever the header says.
+    setStaging((prev) => ({ ...prev, lines: prev.lines.map((l) => ({ ...l, quarantine: l.labelMismatch ? true : next })) }))
   }
 
   // ── Scanning ───────────────────────────────────────────────────────────────
@@ -550,6 +551,9 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
       plate_key: l.plateKey,
       ...(l.quarantine ? { quarantine: true } : {}),
+      ...(l.labelMismatch
+        ? { label_mismatch: { scanned_code: l.labelMismatch.scannedCode, label_product_id: l.labelMismatch.labelProductId } }
+        : {}),
     }))
     // Only plates carrying a VALID line: an empty plate is rejected server-side.
     const platePayload: ReceiptPlate[] = plates
@@ -787,6 +791,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 {mixedPlates.map((plate) => (
                   <React.Fragment key={plate.key}>
                     <MixedPalletCard
+                      realProductPool={products}
                       plate={plate}
                       label={plateLabel(plates, plate.key)}
                       lines={picked.filter((l) => l.plateKey === plate.key)}
@@ -825,6 +830,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                       requirement={requirementFor(line.productId)}
                       highlighted={touchedKey === line.key}
                       productPool={searchPool}
+                      realProductPool={products}
                       onChooseProduct={(p) => updateLine(line.key, {
                         productId: p.id,
                         uomId: scanUomFor(p)?.id ?? null,

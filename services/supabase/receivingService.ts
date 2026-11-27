@@ -19,6 +19,9 @@ export interface ReceiptLine {
    *  product can be held while the rest of the delivery goes to ordinary stock;
    *  the header flag sets every line at once. */
   quarantine?: boolean
+  /** NX-0050: the carton's label said another product. The line is the real
+   *  product; the server holds it and records the mismatch for the desk. */
+  label_mismatch?: { scanned_code: string; label_product_id: number }
 }
 
 /** A pallet or carton built at the dock. The CODE is minted server-side; `key`

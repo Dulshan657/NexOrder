@@ -41,6 +41,10 @@ export default function SomethingWrong() {
               fix: 'Tick Quarantine this delivery (or Hold this line back on one line) and tell your supervisor.',
             },
             {
+              problem: "The carton isn't what the label says",
+              fix: 'Tap Not this product? on the line (or on the Walk stop), pick what is really in the carton and count it. It is recorded as that product and held, and the desk is told to check the barcode.',
+            },
+            {
               problem: 'Barcode damaged or missing',
               fix: 'Receive it by typing the name, then print a plate label from the receipt and stick it on the pallet.',
             },

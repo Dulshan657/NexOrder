@@ -23,6 +23,21 @@ export interface DraftLine {
    * for the server to rank against it.
    */
   quarantine: boolean
+  /**
+   * NX-0050: the carton's label said another product ("Not this product?").
+   * The line is the REAL product, held; this remembers what the label said, so
+   * the receipt can record the mismatch and Undo can put the line back.
+   */
+  labelMismatch?: LabelMismatchDraft
+}
+
+export interface LabelMismatchDraft {
+  labelProductId: number
+  labelSku: string
+  /** The code the label carries: the line's barcode, else the label product's. */
+  scannedCode: string
+  /** The line as it was before, for Undo. */
+  previous: { productId: number | null; quantity: string; uomId: number | null; quarantine: boolean }
 }
 
 /**

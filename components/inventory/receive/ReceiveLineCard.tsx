@@ -145,6 +145,12 @@ export interface ReceiveLineCardProps {
    */
   productPool?: readonly Product[]
   onChooseProduct?: (product: Product) => void
+  /**
+   * NX-0050: what "Not this product?" may name -- the whole catalogue, since
+   * the real carton need not be linked to this supplier. Falls back to
+   * productPool when absent.
+   */
+  realProductPool?: readonly Product[]
 }
 
 export function ReceiveLineCard({
@@ -162,12 +168,41 @@ export function ReceiveLineCard({
   highlighted = false,
   productPool,
   onChooseProduct,
+  realProductPool,
 }: ReceiveLineCardProps) {
   // Local, and keyed by the line's own identity through React's `key`. Nothing
   // above needs to know which lines are open, and lifting it would put a piece
   // of pure presentation into the receipt payload's neighbourhood.
   const [open, setOpen] = useState(false)
+  // NX-0050: the "Not this product?" search is open.
+  const [choosingReal, setChoosingReal] = useState(false)
   const detailsId = useId()
+
+  const swapToReal = (real: Product) => {
+    if (!product || real.id === product.id) return
+    setChoosingReal(false)
+    onUpdate({
+      productId: real.id,
+      // Re-entered in the real product's units: its carton size can differ.
+      quantity: '',
+      uomId: null,
+      quarantine: true,
+      labelMismatch: {
+        labelProductId: product.id,
+        labelSku: product.sku,
+        scannedCode: line.barcode.trim() || product.barcode || product.sku,
+        previous: {
+          productId: line.productId, quantity: line.quantity, uomId: line.uomId, quarantine: line.quarantine,
+        },
+      },
+    })
+  }
+
+  const undoSwap = () => {
+    const prev = line.labelMismatch?.previous
+    if (!prev) return
+    onUpdate({ ...prev, labelMismatch: undefined })
+  }
 
   const supplierSku = product ? supplierSkuFor(product, supplierId) : undefined
 
@@ -266,6 +301,31 @@ export function ReceiveLineCard({
         ) : (
           <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
         )}
+        {line.labelMismatch && product ? (
+          <p className="mt-1 text-xs font-medium text-amber-800">
+            {`Label says ${line.labelMismatch.labelSku} — recorded as ${product.sku}, held`}{' '}
+            <button type="button" className="underline touch-target-y" onClick={undoSwap}>Undo</button>
+          </p>
+        ) : product && (realProductPool ?? productPool ?? []).length > 1 ? (
+          choosingReal ? (
+            <div className="mt-1">
+              <LineProductPicker
+                pool={(realProductPool ?? productPool ?? []).filter((p) => p.id !== product.id)}
+                supplierId={supplierId}
+                onChoose={swapToReal}
+                label="What is really in the carton"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="mt-1 text-xs text-nexgen-blue-dark underline touch-target-y"
+              onClick={() => setChoosingReal(true)}
+            >
+              Not this product?
+            </button>
+          )
+        ) : null}
         <p className="font-mono text-xs text-stone-500">
           {product?.sku}
           {/* The supplier's own part number, so the line can be ticked off
@@ -469,6 +529,9 @@ export function ReceiveLineCard({
                 type="checkbox"
                 aria-label={`Quarantine line ${line.key}`}
                 checked={line.quarantine}
+                // A "Not this product?" line is always held (NX-0050): the
+                // server holds it whatever is sent, so the box says so.
+                disabled={!!line.labelMismatch}
                 onChange={(e) => onUpdate({ quarantine: e.target.checked })}
                 className="h-4 w-4"
               />
