@@ -89,7 +89,7 @@
     },
     {
       "file": "__tests__/wie/putawayTasks.test.ts",
-      "test": "generatePutawayTasks > ignoring capacity, a line bigger than its home goes home in full with no overflow",
+      "test": "generatePutawayTasks — capacity ignored (NX-0049) > ignoring capacity, a line bigger than its home goes home in full with no overflow",
       "proves": [
         "A5"
       ]
