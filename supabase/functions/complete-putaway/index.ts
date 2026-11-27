@@ -67,6 +67,7 @@ import { normalizeScan } from '../_shared/scanNormalize.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { refuseIfHomeBlocked } from '../_shared/putawayHomeBlock.ts'
 import { loadHomeChoiceRefusal } from '../_shared/homeBinHealthLoad.ts'
+import { loadIgnoreCapacity } from '../_shared/putawaySettings.ts'
 import {
   MAKE_HOME_FORBIDDEN,
   OVERRIDE_REASONS,
@@ -319,6 +320,7 @@ serve(async (req: Request) => {
         // bin with room for exactly this stock is not read as full because of it.
         homeRefusal = await loadHomeChoiceRefusal(
           admin, warehouseId, productId, actualId, ordered.map((r) => Number(r.id)),
+          { ignoreCapacity: await loadIgnoreCapacity(admin) },
         )
       } catch (e) {
         // The detail goes to the server log; the operator gets a message they can act on.

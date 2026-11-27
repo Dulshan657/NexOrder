@@ -36,6 +36,9 @@ import { loadWarehouseSlotting, loadSlottingProduct, contextFor, priorityLocatio
 import { resolveSlotting } from './wie/slotting.ts'
 import { goesStraightToWalk, planHomeFirst, type SuggestionSource } from './wie/homeFirst.ts'
 import { loadHomeBins, loadHomeSlotUsage } from './putawayHome.ts'
+import { loadIgnoreCapacity } from './putawaySettings.ts'
+import { loadWarehouseOccupants } from './locationContents.ts'
+import { locationMixRefusal, type LocationOccupant } from './wie/locationMix.ts'
 import type { LevelRoleRecord } from './wie/levelRoles.ts'
 import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile } from './wie/types.ts'
 
@@ -229,6 +232,18 @@ export async function generatePutawayTasks(
   // second line of the same SKU sees the max_qty headroom the first one used.
   const homeQtyPlaced = new Map<number, number>()
   const homes = await loadHomeBins(admin, warehouseId)
+  // NX-0049: who is homed where, for the one-product-per-location rule.
+  const homedAt = new Map<number, Set<number>>()
+  for (const [productId, h] of homes) {
+    homedAt.set(h.binId, new Set([...(homedAt.get(h.binId) ?? []), productId]))
+  }
+  // NX-0049: the owner's "space is unlimited for now" switch.
+  const ignoreCapacity = await loadIgnoreCapacity(admin)
+  // Products this call has already sent to a location, so a later line of a
+  // DIFFERENT product does not take the same empty location (NX-0049).
+  const placedHere = new Map<number, LocationOccupant[]>()
+  // What is in every location now, read once and before the first insert.
+  const occupants = await loadWarehouseOccupants(admin, warehouseId)
   // How full each CAPPED home already is, read now and never again (NX-0032).
   // Home reads fail closed, and every read that can fail that way has to come
   // before the first task is inserted: a line-by-line read would leave the
@@ -334,7 +349,7 @@ export async function generatePutawayTasks(
     })
     if (cErr) throw new Error(`candidate load failed: ${cErr.message}`)
 
-    const candidates: CandidateBin[] = ((candRows ?? []) as any[]).map((r) => {
+    const allCandidates: CandidateBin[] = ((candRows ?? []) as any[]).map((r) => {
       const pending = overlay.get(r.location_id)
       return {
         locationId: r.location_id,
@@ -375,7 +390,23 @@ export async function generatePutawayTasks(
         blockIds: Array.isArray(r.block_ids) ? r.block_ids.map(Number) : [],
         isHold: r.is_hold === true,
       }
-    })
+    }).map((c) => (ignoreCapacity ? { ...c, capacitySlots: null } : c))
+
+    // NX-0049: one product per location. A location the floor would be refused
+    // (wie_home_block -> wie_location_mix_block) is never offered.
+    const homeCode = home ? allCandidates.find((c) => c.locationId === home.binId)?.code ?? null : null
+    const candidates = allCandidates.filter((c) => locationMixRefusal({
+      product: {
+        productId: line.product_id,
+        brand: (product as any).brand ?? null,
+        homeLocationId: home?.binId ?? null,
+        homeCode,
+      },
+      location: { locationId: c.locationId, code: c.code, isHold: c.isHold === true },
+      occupants: [...(occupants.get(c.locationId) ?? []), ...(placedHere.get(c.locationId) ?? [])],
+      homedAtLocation: homedAt.get(c.locationId) ?? new Set<number>(),
+      ownHandlingUnitId: line.hu_id ?? null,
+    }) === null)
 
     // Held bins come from the candidates themselves rather than a second query:
     // `p_hold_only` already decided which kind of bin this line may see, and
@@ -417,6 +448,7 @@ export async function generatePutawayTasks(
         sameRack: r.same_rack === true,
         anchorDistanceM: r.anchor_distance_m != null ? Number(r.anchor_distance_m) : null,
       })),
+      ignoreCapacity,
     })
     // An unusable home must not offer "make this the home bin": there is one.
     // A quarantined line may only go to a hold bin (p_hold_only), and a hold bin
@@ -460,6 +492,13 @@ export async function generatePutawayTasks(
     for (const { alloc, source } of tagged) {
       // Fold this placement into the overlay so later lines see the bin as fuller.
       if (alloc.locationId !== null) {
+        placedHere.set(alloc.locationId, [...(placedHere.get(alloc.locationId) ?? []), {
+          productId: line.product_id,
+          sku: (product as any).sku,
+          name: (product as any).name,
+          brand: (product as any).brand ?? null,
+          handlingUnitId: line.hu_id ?? null,
+        }])
         const bin = binByLocation.get(alloc.locationId)
         const prev = overlay.get(alloc.locationId) ?? { slots: 0, weight: 0 }
         overlay.set(alloc.locationId, {

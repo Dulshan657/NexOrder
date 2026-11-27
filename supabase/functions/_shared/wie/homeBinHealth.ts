@@ -97,6 +97,8 @@ export interface HomeBinFacts {
   pendingQty: number
   /** Why slotting excludes this bin for this product, or null. Set by the caller. */
   slottingRefusal: string | null
+  /** NX-0049: app_settings.putaway_ignore_capacity. Set by the caller; absent = off. */
+  ignoreCapacity?: boolean
 }
 
 /** One home that has problems, as the home-bin-health function returns it. */
@@ -222,6 +224,8 @@ export function homeBinCandidateFactsFromRow(
  * whole units, so a fraction of a unit left is full.
  */
 function isFull(f: HomeBinFacts): boolean {
+  // NX-0049: with capacity ignored a home is never full.
+  if (f.ignoreCapacity) return false
   const room = homeHeadroom(
     {
       locationId: f.binId,

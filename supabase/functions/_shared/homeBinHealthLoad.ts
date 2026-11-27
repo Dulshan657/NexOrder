@@ -101,15 +101,29 @@ async function withSlottingRefusals<T extends HomeBinFacts>(
   })
 }
 
+/**
+ * NX-0049: app_settings.putaway_ignore_capacity, read by the caller
+ * (_shared/putawaySettings.ts) and passed in, so a home is never judged full.
+ */
+export interface CapacityOpts {
+  ignoreCapacity?: boolean
+}
+
+function withCapacity<T extends HomeBinFacts>(f: T, opts: CapacityOpts): T {
+  return opts.ignoreCapacity ? { ...f, ignoreCapacity: true } : f
+}
+
 /** Every primary home in a warehouse, judged. Throws on any read failure. */
 export async function loadHomeBinHealth(
   admin: SupabaseClient,
   warehouseId: number,
+  opts: CapacityOpts = {},
 ): Promise<HomeBinHealthReport> {
   const { data, error } = await admin.rpc('wie_home_bin_facts', { p_warehouse_id: warehouseId })
   if (error) throw new Error(`home location facts load failed: ${error.message}`)
 
-  const facts = ((data ?? []) as HomeBinFactsRow[]).map((row) => homeBinFactsFromRow(row, warehouseId))
+  const facts = ((data ?? []) as HomeBinFactsRow[])
+    .map((row) => withCapacity(homeBinFactsFromRow(row, warehouseId), opts))
   return homeBinReport(warehouseId, await withSlottingRefusals(admin, warehouseId, facts))
 }
 
@@ -126,6 +140,7 @@ async function loadCandidates(
   productId: number,
   binId?: number,
   excludeRecIds: readonly number[] = [],
+  opts: CapacityOpts = {},
 ): Promise<HomeBinCandidateFacts[]> {
   const args: Record<string, number | number[]> = { p_warehouse_id: warehouseId, p_product_id: productId }
   if (binId !== undefined) args.p_bin_id = binId
@@ -134,7 +149,7 @@ async function loadCandidates(
   if (error) throw new Error(`home location candidates load failed: ${error.message}`)
 
   const facts = ((data ?? []) as HomeBinCandidateFactsRow[])
-    .map((row) => homeBinCandidateFactsFromRow(row, warehouseId))
+    .map((row) => withCapacity(homeBinCandidateFactsFromRow(row, warehouseId), opts))
   return withSlottingRefusals(admin, warehouseId, facts)
 }
 
@@ -149,8 +164,9 @@ export async function loadHomeBinChoices(
   warehouseId: number,
   productId: number,
   excludeRecIds: readonly number[] = [],
+  opts: CapacityOpts = {},
 ): Promise<HomeBinChoice[]> {
-  return homeBinChoices(await loadCandidates(admin, warehouseId, productId, undefined, excludeRecIds))
+  return homeBinChoices(await loadCandidates(admin, warehouseId, productId, undefined, excludeRecIds, opts))
 }
 
 /**
@@ -165,8 +181,9 @@ export async function loadHomeChoiceRefusal(
   productId: number,
   binId: number,
   excludeRecIds: readonly number[] = [],
+  opts: CapacityOpts = {},
 ): Promise<string | null> {
-  const [facts] = await loadCandidates(admin, warehouseId, productId, binId, excludeRecIds)
+  const [facts] = await loadCandidates(admin, warehouseId, productId, binId, excludeRecIds, opts)
   // No row: the id is not a bin under this warehouse (a rack, a zone, another site).
   if (!facts) return 'That is not a storage location in this warehouse.'
   return homeChoiceRefusal(facts)

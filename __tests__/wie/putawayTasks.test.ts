@@ -16,6 +16,12 @@ interface StubOpts {
   /** Fail only the nth (1-based) read of one table, so a later line can fail
    *  after an earlier one succeeded. */
   failNthRead?: { table: string; n: number }
+  /** app_settings row (NX-0049 putaway_ignore_capacity). */
+  appSettings?: Record<string, unknown>
+  /** wie_location_occupants rows (NX-0049): stock and open lines by location. */
+  occupants?: Array<Record<string, unknown>>
+  /** Make wie_location_occupants answer an error (NX-0049). */
+  failOccupants?: boolean
 }
 
 function candidate(o: Partial<{
@@ -48,6 +54,7 @@ function makeAdmin(opts: StubOpts) {
       case 'locations': return [opts.warehouse]
       case 'products': return [product]
       case 'product_home_bins': return opts.homeBins ?? []
+      case 'app_settings': return opts.appSettings ? [opts.appSettings] : []
       case 'wie_rules':
       case 'category_compatibility':
       case 'wie_scoring_profiles':
@@ -61,6 +68,7 @@ function makeAdmin(opts: StubOpts) {
     const error = failed ? { message: 'boom' } : null
     const b = {
       eq: () => b,
+      gt: () => b,
       in: () => b,
       or: () => b,
       order: () => b,
@@ -95,10 +103,16 @@ function makeAdmin(opts: StubOpts) {
         }),
       }
     },
-    rpc: async (name: string) =>
-      name === 'wie_putaway_candidates'
-        ? { data: opts.candidates, error: null }
-        : { data: null, error: null },
+    rpc: async (name: string) => {
+      calls.push(`rpc:${name}`)
+      if (name === 'wie_putaway_candidates') return { data: opts.candidates, error: null }
+      if (name === 'wie_location_occupants') {
+        return opts.failOccupants
+          ? { data: null, error: { message: 'boom' } }
+          : { data: opts.occupants ?? [], error: null }
+      }
+      return { data: null, error: null }
+    },
   }
   // deno/edge SupabaseClient type is stubbed for the test.
   return { admin: admin as unknown as Parameters<typeof generatePutawayTasks>[0], inserted, calls }
@@ -688,5 +702,115 @@ describe('generatePutawayTasks — a quarantined line (NX-0033 I1)', () => {
       warehouseId: 9, lines: [{ product_id: 1, quantity: 6, quarantine: false }], actorId: 'u1',
     })
     expect(inserted[0]).toMatchObject({ status: 'suggested', suggestion_source: 'overflow' })
+  })
+})
+
+describe('generatePutawayTasks — capacity ignored (NX-0049)', () => {
+  const homeBins = [{ product_id: 1, bin_id: 20, max_qty: 10 }]
+
+  it('ignoring capacity, a line bigger than its home goes home in full with no overflow', async () => {
+    // Home 20 is full by slots AND by its max; with the switch off this spills.
+    const cands = [
+      candidate({ location_id: 20, code: 'H20', capacity_slots: 10, used_slots: 10, same_rack: true, anchor_distance_m: 0 }),
+      candidate({ location_id: 21, code: 'H21', same_rack: true, anchor_distance_m: 2 }),
+    ]
+    const off = makeAdmin({ warehouse: racked, homeBins, candidates: cands })
+    await generatePutawayTasks(off.admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 300 }], actorId: 'u1' })
+    expect(off.inserted.some((r) => r.suggestion_source === 'overflow')).toBe(true)
+
+    const on = makeAdmin({ warehouse: racked, homeBins, candidates: cands, appSettings: { putaway_ignore_capacity: true } })
+    await generatePutawayTasks(on.admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 300 }], actorId: 'u1' })
+    expect(on.inserted.map((r) => [r.recommended_location_id, r.quantity, r.suggestion_source, r.status])).toEqual([
+      [20, 300, 'home', 'assigned'],
+    ])
+  })
+})
+
+describe('generatePutawayTasks — one product per location (NX-0049)', () => {
+  const other = { sku: 'TST-OTHER', name: 'Other product', brand: 'OTHERCO' }
+
+  it('never offers a location holding another product', async () => {
+    // Bin 7 is nearest the dock but holds another product; bin 8 is empty.
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [
+        candidate({ location_id: 7, distance_from_dock_m: 1 }),
+        candidate({ location_id: 8, code: 'B8', distance_from_dock_m: 50 }),
+      ],
+      occupants: [{ location_id: 7, product_id: 2, handling_unit_id: null, rec_id: null, ...other }],
+    })
+    await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }], actorId: 'u1' })
+    expect(inserted.map((r) => r.recommended_location_id)).toEqual([8])
+  })
+
+  it("never offers a location another product's open line is headed for", async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [
+        candidate({ location_id: 7, distance_from_dock_m: 1 }),
+        candidate({ location_id: 8, code: 'B8', distance_from_dock_m: 50 }),
+      ],
+      occupants: [{ location_id: 7, product_id: 2, handling_unit_id: null, rec_id: 77, ...other }],
+    })
+    await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }], actorId: 'u1' })
+    expect(inserted.map((r) => r.recommended_location_id)).toEqual([8])
+  })
+
+  it('still sends a product home to a shared home of same-brand homed products', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      product: { id: 1, sku: 'S1', name: 'S', size_factor: 1, category: null, brand: 'TESTCO' },
+      homeBins: [{ product_id: 1, bin_id: 20, max_qty: null }, { product_id: 2, bin_id: 20, max_qty: null }],
+      candidates: [candidate({ location_id: 20, code: 'H20' }), candidate({ location_id: 8, code: 'B8' })],
+      occupants: [{ location_id: 20, product_id: 2, handling_unit_id: null, rec_id: null, ...other, brand: 'testco' }],
+    })
+    await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }], actorId: 'u1' })
+    expect(inserted.map((r) => [r.recommended_location_id, r.suggestion_source])).toEqual([[20, 'home']])
+  })
+
+  it('two lines of different products in one receipt do not share an empty location', async () => {
+    let n = 0
+    const products = [
+      { id: 1, sku: 'S1', name: 'One', size_factor: 1, category: null },
+      { id: 2, sku: 'S2', name: 'Two', size_factor: 1, category: null },
+    ]
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [
+        candidate({ location_id: 7, distance_from_dock_m: 1 }),
+        candidate({ location_id: 8, code: 'B8', distance_from_dock_m: 50 }),
+      ],
+    })
+    // The stub serves one product row; give each line its own.
+    const from = (admin as any).from.bind(admin)
+    ;(admin as any).from = (t: string) => {
+      if (t !== 'products') return from(t)
+      const row = products[n++ % 2]
+      return { select: () => ({ eq: () => ({ single: async () => ({ data: row, error: null }) }) }) }
+    }
+    await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }, { product_id: 2, quantity: 5 }], actorId: 'u1',
+    })
+    expect(inserted.map((r) => [r.product_id, r.recommended_location_id])).toEqual([[1, 7], [2, 8]])
+  })
+
+  it('fails closed when what is in the locations cannot be read', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked, candidates: [candidate({ location_id: 7 })], failOccupants: true,
+    })
+    await expect(generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }], actorId: 'u1' }))
+      .rejects.toThrow(/location contents/)
+    expect(inserted).toHaveLength(0)
+  })
+
+  it('reads what is in the locations once, before the first task is inserted', async () => {
+    const { admin, calls } = makeAdmin({
+      warehouse: racked, candidates: [candidate({ location_id: 7 })],
+    })
+    await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }, { product_id: 1, quantity: 5 }], actorId: 'u1',
+    })
+    expect(calls.filter((c) => c === 'rpc:wie_location_occupants')).toHaveLength(1)
+    expect(calls.indexOf('rpc:wie_location_occupants')).toBeLessThan(calls.indexOf('insert'))
   })
 })

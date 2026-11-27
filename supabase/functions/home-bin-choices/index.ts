@@ -43,6 +43,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { assertMayActAtWarehouse } from '../_shared/receiveDestination.ts'
 import { loadHomeBinChoices } from '../_shared/homeBinHealthLoad.ts'
+import { loadIgnoreCapacity } from '../_shared/putawaySettings.ts'
 import { recommendationScopeRefusal } from '../_shared/homeChoiceScope.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
@@ -141,6 +142,7 @@ serve(async (req: Request) => {
     try {
       bins = await loadHomeBinChoices(
         admin, warehouseId, productId, recommendationId === null ? [] : [recommendationId],
+        { ignoreCapacity: await loadIgnoreCapacity(admin) },
       )
     } catch (e) {
       // The detail goes to the server log; the operator gets a message they can act on.
